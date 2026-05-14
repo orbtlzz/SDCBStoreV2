@@ -475,7 +475,7 @@ function CheckoutForm({
       confirmParams: {
         // Required for redirect-based payment methods.
         // For card payments this URL is never visited.
-        return_url: "http://localhost:3000",
+        return_url: window.location.origin,
       },
       redirect: "if_required",
     });
