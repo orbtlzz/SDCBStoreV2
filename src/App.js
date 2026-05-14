@@ -441,17 +441,12 @@ function CheckoutForm({
   onCancel,
   highContrast,
   onAnnounce,
+  shipping,
+  setShipping,
 }) {
   const stripe = useStripe();
   const elements = useElements();
   const errorRef = useRef(null);
-  const [shipping, setShipping] = useState({
-  name: "",
-  email: "",
-  address: "",
-  city: "",
-  zip: "",
-});
 
   // "idle" | "submitting" | "success" | "error"
   const [status, setStatus] = useState("idle");
@@ -689,6 +684,8 @@ function CheckoutModal({
   onSuccess,
   highContrast,
   onAnnounce,
+  shipping,
+  setShipping,
 }) {
   const dialogRef = useRef(null);
   const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
@@ -855,6 +852,8 @@ function CheckoutModal({
             onCancel={onClose}
             highContrast={highContrast}
             onAnnounce={onAnnounce}
+            shipping={shipping}
+            setShipping={setShipping}
           />
         </Elements>
       </div>
@@ -1057,6 +1056,13 @@ export default function App() {
   const [announcement, setAnnouncement] = useState("");
   const [smartPopup, setSmartPopup] = useState("");
   const [recommendedItems, setRecommendedItems] = useState([]);
+  const [shipping, setShipping] = useState({
+  name: "",
+  email: "",
+  address: "",
+  city: "",
+ zip: "",
+});
 
   // ── Checkout state ──────────────────────────────────────────────────────
   const [clientSecret, setClientSecret] = useState(null);
@@ -1104,7 +1110,7 @@ export default function App() {
       const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/create-payment-intent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cart }),
+        body: JSON.stringify({ cart, shipping }),
       });
 
       const data = await res.json();
@@ -1661,6 +1667,8 @@ export default function App() {
         onSuccess={handlePaymentSuccess}
         highContrast={highContrast}
         onAnnounce={setAnnouncement}
+        shipping={shipping}
+        setShipping={setShipping}
       />
     </>
   );
