@@ -565,6 +565,15 @@ function CheckoutForm({
 
       {/* Stripe's PaymentElement renders card, Apple Pay, Google Pay, etc.
           It is internally accessible — Stripe injects its own labeled iframes. */}
+
+const [shipping, setShipping] = useState({
+  name: "",
+  email: "",
+  address: "",
+  city: "",
+  zip: "",
+});
+
       <PaymentElement
         id="payment-element"
         options={{
