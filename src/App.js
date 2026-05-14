@@ -445,6 +445,13 @@ function CheckoutForm({
   const stripe = useStripe();
   const elements = useElements();
   const errorRef = useRef(null);
+  const [shipping, setShipping] = useState({
+  name: "",
+  email: "",
+  address: "",
+  city: "",
+  zip: "",
+});
 
   // "idle" | "submitting" | "success" | "error"
   const [status, setStatus] = useState("idle");
@@ -566,13 +573,47 @@ function CheckoutForm({
       {/* Stripe's PaymentElement renders card, Apple Pay, Google Pay, etc.
           It is internally accessible — Stripe injects its own labeled iframes. */}
 
-const [shipping, setShipping] = useState({
-  name: "",
-  email: "",
-  address: "",
-  city: "",
-  zip: "",
-});
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
+        <input
+          placeholder="Full Name"
+          value={shipping.name}
+          onChange={(e) =>
+            setShipping({ ...shipping, name: e.target.value })
+          }
+        />
+
+      <input
+        placeholder="Email"
+        value={shipping.email}
+        onChange={(e) =>
+          setShipping({ ...shipping, email: e.target.value })
+      }
+    />
+
+  <input
+    placeholder="Address"
+    value={shipping.address}
+    onChange={(e) =>
+      setShipping({ ...shipping, address: e.target.value })
+    }
+  />
+
+  <input
+    placeholder="City"
+    value={shipping.city}
+    onChange={(e) =>
+      setShipping({ ...shipping, city: e.target.value })
+    }
+  />
+
+  <input
+    placeholder="ZIP"
+    value={shipping.zip}
+    onChange={(e) =>
+      setShipping({ ...shipping, zip: e.target.value })
+    }
+  />
+</div>
 
       <PaymentElement
         id="payment-element"
