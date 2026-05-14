@@ -1,26 +1,25 @@
 {
-  "name": "accessible-store-frontend",
+  "name": "accessible-store",
   "version": "1.0.0",
   "private": true,
-  "description": "React frontend for accessible shopping store",
-  "main": "src/index.tsx",
+  "description": "Accessible shopping store with Stripe backend",
+  "type": "module",
+  "main": "server.js",
   "dependencies": {
     "@stripe/react-stripe-js": "^2.9.0",
     "@stripe/stripe-js": "^4.10.0",
+    "express": "^5.2.1",
+    "cors": "^2.8.6",
+    "stripe": "^22.1.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-scripts": "^5.0.0"
   },
-  "devDependencies": {
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "typescript": "^5.7.2"
-  },
   "scripts": {
-    "start": "react-scripts start",
+    "start": "node server.js",
+    "client": "react-scripts start",
     "build": "react-scripts build",
-    "test": "react-scripts test --env=jsdom",
-    "eject": "react-scripts eject"
+    "test": "react-scripts test --env=jsdom"
   },
   "browserslist": {
     "production": [
