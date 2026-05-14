@@ -1,56 +1,47 @@
 import express from "express";
 import cors from "cors";
 import Stripe from "stripe";
-import dotenv from "dotenv";
-
-dotenv.config();
 
 const app = express();
 
-// middleware
+// ⚠️ Stripe secret key comes from Render environment variables
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
 app.use(cors());
 app.use(express.json());
 
-// Stripe setup
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+// Health check (useful on Render)
+app.get("/", (req, res) => {
+  res.send("Server is running");
+});
 
-// Create checkout session
-app.post("/create-checkout-session", async (req, res) => {
-  const { cart } = req.body;
-
-  if (!cart || cart.length === 0) {
-    return res.status(400).json({ error: "Cart is empty" });
-  }
-
+app.post("/create-payment-intent", async (req, res) => {
   try {
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      payment_method_types: ["card"],
+    const cart = req.body.cart || [];
 
-      line_items: cart.map((item) => ({
-        quantity: item.qty,
-        price_data: {
-          currency: "usd",
-          unit_amount: Math.round(item.price * 100),
-          product_data: {
-            name: item.name,
-            description: item.description || "",
-          },
-        },
-      })),
+    const total = cart.reduce((sum, item) => {
+      return sum + item.price * item.qty;
+    }, 0);
 
-      success_url: "http://localhost:3000/success",
-      cancel_url: "http://localhost:3000/cancel",
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(total * 100),
+      currency: "usd",
     });
 
-    res.json({ url: session.url });
-  } catch (error) {
-    console.error("Stripe error:", error);
-    res.status(500).json({ error: error.message });
+    res.send({
+      clientSecret: paymentIntent.client_secret,
+    });
+  } catch (err) {
+    console.error("Payment Intent Error:", err);
+    res.status(500).send({ error: err.message });
   }
 });
 
-// start server
+const PORT = process.env.PORT || 4242;
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+});r
 app.listen(4242, () => {
   console.log("Server running on http://localhost:4242");
 });
