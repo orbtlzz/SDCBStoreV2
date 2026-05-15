@@ -4,10 +4,7 @@ import Stripe from "stripe";
 import Shippo from "shippo";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
-const shippo = new Shippo({
-  apiKeyHeader: process.env.SHIPPO_API_KEY,
-});
+const shippo = Shippo(process.env.SHIPPO_API_KEY);
 
 const app = express();
 
