@@ -9,7 +9,11 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // IMPORTANT for Stripe webhooks later (kept simple for now)
 app.use(cors({
-  origin: process.env.CLIENT_URL || "*",
+  origin: [
+    "http://localhost:3000",
+    "https://sdcbstorev2.onrender.com"
+  ],
+  credentials: true
 }));
 
 app.use(express.json());
