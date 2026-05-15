@@ -10,6 +10,60 @@ app.use(cors());
 app.use(express.json());
 
 app.post("/create-payment-intent", async (req, res) => {
+
+  app.post("/create-shipping-label", async (req, res) => {
+  try {
+    const { shipping } = req.body;
+
+    const response = await fetch("https://api.goshippo.com/shipments/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `ShippoToken ${process.env.SHIPPO_API_KEY}`,
+      },
+      body: JSON.stringify({
+        address_from: {
+          name: "San Diego Center for the Blind",
+          street1: "5922 El Cajon Blvd",
+          city: "San Diego",
+          state: "CA",
+          zip: "92115",
+          country: "US",
+        },
+        address_to: {
+          name: shipping.name,
+          street1: shipping.address,
+          city: shipping.city,
+          state: shipping.state || "CA",
+          zip: shipping.zip,
+          country: "US",
+        },
+        parcels: [
+          {
+            length: "10",
+            width: "5",
+            height: "5",
+            distance_unit: "in",
+            weight: "1",
+            mass_unit: "lb",
+          },
+        ],
+        async: false,
+      }),
+    });
+
+    const data = await response.json();
+
+    res.json({
+      success: true,
+      shipment: data,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+  
   try {
     const { cart } = req.body;
 
