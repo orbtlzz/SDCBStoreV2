@@ -2,12 +2,12 @@ import express from "express";
 import cors from "cors";
 import Stripe from "stripe";
 import nodemailer from "nodemailer";
+import fetch from "node-fetch";
 
 const app = express();
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-// IMPORTANT for Stripe webhooks later (kept simple for now)
 app.use(cors({
   origin: [
     "http://localhost:3000",
@@ -31,7 +31,6 @@ const transporter = nodemailer.createTransport({
 
 // ─────────────────────────────
 // STRIPE PAYMENT INTENT
-// (IMPORTANT: price should ideally be validated server-side)
 // ─────────────────────────────
 app.post("/create-payment-intent", async (req, res) => {
   try {
@@ -51,9 +50,7 @@ app.post("/create-payment-intent", async (req, res) => {
       automatic_payment_methods: { enabled: true },
     });
 
-    res.json({
-      clientSecret: paymentIntent.client_secret,
-    });
+    res.json({ clientSecret: paymentIntent.client_secret });
 
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -61,15 +58,11 @@ app.post("/create-payment-intent", async (req, res) => {
 });
 
 // ─────────────────────────────
-// SHIPPING LABEL (SHIPPO)
+// SHIPPING LABEL (OPTIONAL ROUTE)
 // ─────────────────────────────
 app.post("/create-shipping-label", async (req, res) => {
   try {
     const { shipping } = req.body;
-
-    if (!shipping) {
-      return res.status(400).json({ error: "Missing shipping info" });
-    }
 
     const response = await fetch("https://api.goshippo.com/shipments/", {
       method: "POST",
@@ -109,19 +102,15 @@ app.post("/create-shipping-label", async (req, res) => {
     });
 
     const data = await response.json();
-
-    res.json({
-      success: true,
-      shipment: data,
-    });
+    return res.json({ success: true, shipment: data });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 
 // ─────────────────────────────
-// ORDER AFTER PAYMENT
+// ORDER AFTER PAYMENT (FIXED)
 // ─────────────────────────────
 app.post("/create-order-after-payment", async (req, res) => {
   try {
@@ -129,15 +118,14 @@ app.post("/create-order-after-payment", async (req, res) => {
 
     const { shipping, paymentIntentId } = req.body;
 
-    console.log("📦 Shipping Data:", shipping);
-    console.log("💳 Payment Intent:", paymentIntentId);
-
     if (!paymentIntentId) {
       console.log("❌ Missing paymentIntentId");
       return res.status(400).json({ error: "Missing paymentIntentId" });
     }
 
-    // VERIFY STRIPE PAYMENT
+    console.log("📦 Shipping Data:", shipping);
+    console.log("💳 Payment Intent:", paymentIntentId);
+
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
     console.log("✅ Stripe Status:", paymentIntent.status);
@@ -149,7 +137,9 @@ app.post("/create-order-after-payment", async (req, res) => {
 
     console.log("🚚 Creating Shippo shipment...");
 
-    // Shippo label
+    // ───────────────
+    // SHIPPO REQUEST
+    // ───────────────
     const response = await fetch("https://api.goshippo.com/shipments/", {
       method: "POST",
       headers: {
@@ -187,10 +177,13 @@ app.post("/create-order-after-payment", async (req, res) => {
       }),
     });
 
-const data = await response.json();
-console.log("📦 SHIPPO RESPONSE:", data);
-
     const data = await response.json();
+    console.log("📦 SHIPPO RESPONSE:", data);
+
+    if (!response.ok) {
+      console.log("❌ Shippo failed:", data);
+      return res.status(500).json({ error: "Shippo request failed", details: data });
+    }
 
     const trackingNumber =
       data?.tracking_number || data?.object_id || "Processing";
@@ -198,7 +191,8 @@ console.log("📦 SHIPPO RESPONSE:", data);
     const trackingUrl =
       data?.tracking_url_provider || data?.tracking_url || "";
 
-    // Email
+    console.log("📧 Sending email to:", shipping.email);
+
     await transporter.sendMail({
       from: `"SDCB Store" <${process.env.EMAIL_USER}>`,
       to: shipping.email,
@@ -214,7 +208,7 @@ console.log("📦 SHIPPO RESPONSE:", data);
       `,
     });
 
-    res.json({
+    return res.json({
       success: true,
       shipment: data,
       trackingNumber,
@@ -222,12 +216,13 @@ console.log("📦 SHIPPO RESPONSE:", data);
     });
 
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.log("❌ SERVER ERROR:", err);
+    return res.status(500).json({ error: err.message });
   }
 });
 
 // ─────────────────────────────
-// SERVER START (RENDER SAFE)
+// SERVER START
 // ─────────────────────────────
 const PORT = process.env.PORT || 4242;
 
