@@ -504,18 +504,18 @@ function CheckoutForm({
 
   // Send order to backend
   const orderResponse = await fetch(
-    `${process.env.REACT_APP_SERVER_URL}/create-order-after-payment`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        shipping,
-        paymentIntentId,
-      }),
-    }
-  );
+  "https://sdcb-store-backend.onrender.com/create-order-after-payment",
+  {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      shipping,
+      paymentIntentId,
+    }),
+  }
+);
 
   const orderData = await orderResponse.json();
 
