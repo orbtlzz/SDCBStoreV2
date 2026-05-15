@@ -1,11 +1,13 @@
 import express from "express";
 import cors from "cors";
 import Stripe from "stripe";
-import shippoLib from "shippo";
-
-const shippo = shippoLib(process.env.SHIPPO_API_KEY);
+import Shippo from "shippo";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+const shippo = new Shippo({
+  apiKeyHeader: process.env.SHIPPO_API_KEY,
+});
 
 const app = express();
 
