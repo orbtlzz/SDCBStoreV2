@@ -2,8 +2,17 @@ import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
 import Stripe from "stripe";
+import nodemailer from "nodemailer";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
 const app = express();
 
@@ -97,14 +106,18 @@ app.post("/create-order-after-payment", async (req, res) => {
   try {
     const { shipping, paymentIntentId } = req.body;
 
-    // 1. VERIFY PAYMENT WITH STRIPE
+    // ─────────────────────────────────────
+    // 1. VERIFY STRIPE PAYMENT
+    // ─────────────────────────────────────
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
     if (paymentIntent.status !== "succeeded") {
       return res.status(400).json({ error: "Payment not completed" });
     }
 
-    // 2. CREATE SHIPPING LABEL WITH SHIPPO
+    // ─────────────────────────────────────
+    // 2. CREATE SHIPMENT (SHIPPO)
+    // ─────────────────────────────────────
     const response = await fetch("https://api.goshippo.com/shipments/", {
       method: "POST",
       headers: {
@@ -144,10 +157,54 @@ app.post("/create-order-after-payment", async (req, res) => {
 
     const data = await response.json();
 
+    // ─────────────────────────────────────
+    // 3. EXTRACT TRACKING INFO
+    // ─────────────────────────────────────
+    const trackingNumber =
+      data?.tracking_number || data?.object_id || "Processing";
+
+    const trackingUrl =
+      data?.tracking_url_provider || data?.tracking_url || "";
+
+    // ─────────────────────────────────────
+    // 4. SEND EMAIL TO CUSTOMER (STEP 5)
+    // ─────────────────────────────────────
+    await transporter.sendMail({
+      from: '"SDCB Store" <your-email@gmail.com>',
+      to: shipping.email,
+      subject: "Your Order Confirmation + Tracking Info",
+      html: `
+        <h2>Thank you for your order!</h2>
+
+        <p><strong>Name:</strong> ${shipping.name}</p>
+        <p><strong>Address:</strong> ${shipping.address}, ${shipping.city}, ${shipping.state} ${shipping.zip}</p>
+
+        <hr />
+
+        <h3>Tracking Information</h3>
+        <p><strong>Tracking Number:</strong> ${trackingNumber}</p>
+
+        <p>
+          Track your package here:<br/>
+          <a href="${trackingUrl}" target="_blank">
+            ${trackingUrl || "Tracking link will update soon"}
+          </a>
+        </p>
+
+        <p>We’ll notify you when your order ships.</p>
+      `,
+    });
+
+    // ─────────────────────────────────────
+    // 5. RETURN RESPONSE
+    // ─────────────────────────────────────
     return res.json({
       success: true,
       shipment: data,
+      trackingNumber,
+      trackingUrl,
     });
+
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
