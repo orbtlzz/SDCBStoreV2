@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import fetch from "node-fetch";
 import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
@@ -97,9 +98,8 @@ app.post("/create-shipping-label", async (req, res) => {
 // SERVER START
 // ─────────────────────────────────────────────
 const PORT = process.env.PORT || 4242;
+
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-app.listen(4242, () => {
-  console.log("Server running on port 4242");
-});
+
