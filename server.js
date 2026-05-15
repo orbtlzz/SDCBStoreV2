@@ -125,17 +125,29 @@ app.post("/create-shipping-label", async (req, res) => {
 // ─────────────────────────────
 app.post("/create-order-after-payment", async (req, res) => {
   try {
+    console.log("🔥 ORDER ROUTE HIT");
+
     const { shipping, paymentIntentId } = req.body;
 
+    console.log("📦 Shipping Data:", shipping);
+    console.log("💳 Payment Intent:", paymentIntentId);
+
     if (!paymentIntentId) {
+      console.log("❌ Missing paymentIntentId");
       return res.status(400).json({ error: "Missing paymentIntentId" });
     }
 
+    // VERIFY STRIPE PAYMENT
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
+    console.log("✅ Stripe Status:", paymentIntent.status);
+
     if (paymentIntent.status !== "succeeded") {
+      console.log("❌ Payment not completed");
       return res.status(400).json({ error: "Payment not completed" });
     }
+
+    console.log("🚚 Creating Shippo shipment...");
 
     // Shippo label
     const response = await fetch("https://api.goshippo.com/shipments/", {
@@ -174,6 +186,9 @@ app.post("/create-order-after-payment", async (req, res) => {
         async: false,
       }),
     });
+
+const data = await response.json();
+console.log("📦 SHIPPO RESPONSE:", data);
 
     const data = await response.json();
 
