@@ -13,25 +13,23 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // STRIPE INIT  ← replace with your real publishable key
 // ─────────────────────────────────────────────────────────────────────────────
-const stripePromise = loadStripe(
-  "pk_test_51QPYmlRvM82IXdmIuXLoDX28R22de33njhGVXDEfD58tyGXrSFWns6LUNXlhUAx9cjusD9SWzOhHpIMJhQMmpWRr002Z5VXYAE"
-);
+const stripePromise = loadStripe("YOUR_PUBLISHABLE_KEY_HERE");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SDCB Brand Colors
 // ─────────────────────────────────────────────────────────────────────────────
 const SDCB = {
-  blue: "#1B75BB",
-  navy: "#0D3D6E",
-  skyLight: "#E8F3FB",
-  skyMid: "#5AACDF",
-  white: "#FFFFFF",
-  offWhite: "#F5FAFF",
-  gray: "#4A5568",
+  blue:      "#1B75BB",
+  navy:      "#0D3D6E",
+  skyLight:  "#E8F3FB",
+  skyMid:    "#5AACDF",
+  white:     "#FFFFFF",
+  offWhite:  "#F5FAFF",
+  gray:      "#4A5568",
   lightGray: "#E2EDF7",
-  hcBg: "#000000",
-  hcYellow: "#FFD700",
-  hcText: "#FFFFFF",
+  hcBg:      "#000000",
+  hcYellow:  "#FFD700",
+  hcText:    "#FFFFFF",
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -322,10 +320,7 @@ function ProductCard({ product, onAddToCart, onAnnounce, highContrast }) {
         }
       }}
     >
-      <div
-        aria-hidden="true"
-        style={{ fontSize: 40, lineHeight: 1, textAlign: "center" }}
-      >
+      <div aria-hidden="true" style={{ fontSize: 40, lineHeight: 1, textAlign: "center" }}>
         {product.emoji}
       </div>
 
@@ -418,12 +413,8 @@ function ProductCard({ product, onAddToCart, onAnnounce, highContrast }) {
         style={{
           ...btnStyle(highContrast, "primary"),
           background: added
-            ? highContrast
-              ? "#007700"
-              : "#2A7D4A"
-            : highContrast
-            ? SDCB.hcYellow
-            : SDCB.blue,
+            ? highContrast ? "#007700" : "#2A7D4A"
+            : highContrast ? SDCB.hcYellow : SDCB.blue,
           color: added ? SDCB.white : highContrast ? SDCB.hcBg : SDCB.white,
         }}
       >
@@ -437,21 +428,13 @@ function ProductCard({ product, onAddToCart, onAnnounce, highContrast }) {
 // CHECKOUT FORM  (must live inside <Elements>)
 // Uses useStripe + useElements — only works as a child of <Elements>.
 // ─────────────────────────────────────────────────────────────────────────────
-function CheckoutForm({
-  total,
-  cart,
-  shipping,
-  onSuccess,
-  onCancel,
-  highContrast,
-  onAnnounce,
-}) {
-  const stripe = useStripe();
-  const elements = useElements();
-  const errorRef = useRef(null);
+function CheckoutForm({ total, onSuccess, onCancel, highContrast, onAnnounce }) {
+  const stripe    = useStripe();
+  const elements  = useElements();
+  const errorRef  = useRef(null);
 
   // "idle" | "submitting" | "success" | "error"
-  const [status, setStatus] = useState("idle");
+  const [status,   setStatus]   = useState("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
   // Move focus to error message when it appears
@@ -474,55 +457,28 @@ function CheckoutForm({
     // confirmPayment with redirect: "if_required" means:
     //   • card payments resolve here with a result object (no redirect)
     //   • redirect-based methods (bank, iDEAL, etc.) still redirect to return_url
-    const result = await stripe.confirmPayment({
+    const { error } = await stripe.confirmPayment({
       elements,
       confirmParams: {
-         return_url: window.location.origin,
+        // Required for redirect-based payment methods.
+        // For card payments this URL is never visited.
+        return_url: "http://localhost:3000",
       },
       redirect: "if_required",
     });
 
-    if (result.error) {
-  setStatus("error");
-  setErrorMsg(result.error.message ?? "An unexpected error occurred.");
-  onAnnounce(`Payment failed: ${result.error.message}`);
-  return;
-} else {
-  setStatus("success");
-  onAnnounce("Payment successful! Thank you for your order.");
-
-  // Retrieve latest payment intent safely
-  const { paymentIntent } = await stripe.retrievePaymentIntent(
-    result.paymentIntent?.client_secret || clientSecret
-  );
-
-  const paymentIntentId = paymentIntent?.id;
-
-  console.log("✅ PaymentIntent ID:", paymentIntentId);
-
-  console.log("📦 Creating order after payment...");
-
-  // Send order to backend
-  const orderResponse = await fetch(
-  "https://sdcb-store-backend.onrender.com/create-order-after-payment",
-  {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      shipping,
-      paymentIntentId,
-    }),
-  }
-);
-
-  const orderData = await orderResponse.json();
-
-  console.log("📦 Order response:", orderData);
-
-  setTimeout(onSuccess, 400);
-}
+    if (error) {
+      // error.type === "card_error" | "validation_error" | other
+      setStatus("error");
+      setErrorMsg(error.message ?? "An unexpected error occurred.");
+      onAnnounce(`Payment failed: ${error.message}`);
+    } else {
+      // Payment confirmed successfully (no redirect needed)
+      setStatus("success");
+      onAnnounce("Payment successful! Thank you for your order.");
+      // Short delay so the announcer fires before we unmount
+      setTimeout(onSuccess, 400);
+    }
   };
 
   if (status === "success") {
@@ -564,9 +520,7 @@ function CheckoutForm({
       <div
         style={{
           background: highContrast ? "#111" : SDCB.skyLight,
-          border: highContrast
-            ? `1px solid ${SDCB.hcYellow}`
-            : `1px solid ${SDCB.lightGray}`,
+          border: highContrast ? `1px solid ${SDCB.hcYellow}` : `1px solid ${SDCB.lightGray}`,
           borderRadius: 8,
           padding: "0.75rem 1rem",
           display: "flex",
@@ -575,12 +529,7 @@ function CheckoutForm({
         }}
         aria-label={`Order total: $${total.toFixed(2)}`}
       >
-        <span
-          style={{
-            color: highContrast ? SDCB.hcText : SDCB.gray,
-            fontSize: "0.9rem",
-          }}
-        >
+        <span style={{ color: highContrast ? SDCB.hcText : SDCB.gray, fontSize: "0.9rem" }}>
           Order total
         </span>
         <span
@@ -636,9 +585,8 @@ function CheckoutForm({
         }
         style={{
           ...btnStyle(highContrast, "primary"),
-          opacity: !stripe || !elements || isSubmitting ? 0.65 : 1,
-          cursor:
-            !stripe || !elements || isSubmitting ? "not-allowed" : "pointer",
+          opacity: (!stripe || !elements || isSubmitting) ? 0.65 : 1,
+          cursor: (!stripe || !elements || isSubmitting) ? "not-allowed" : "pointer",
         }}
       >
         {isSubmitting ? "⏳ Processing…" : `Pay $${total.toFixed(2)}`}
@@ -671,8 +619,8 @@ function CheckoutModal({
   highContrast,
   onAnnounce,
 }) {
-  const dialogRef = useRef(null);
-  const total = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const dialogRef  = useRef(null);
+  const total      = cart.reduce((s, i) => s + i.price * i.qty, 0);
 
   // Focus the dialog when it opens
   useEffect(() => {
@@ -697,7 +645,7 @@ function CheckoutModal({
       if (!focusable || focusable.length === 0) return;
 
       const first = focusable[0];
-      const last = focusable[focusable.length - 1];
+      const last  = focusable[focusable.length - 1];
 
       if (e.shiftKey) {
         if (document.activeElement === first) {
@@ -721,13 +669,13 @@ function CheckoutModal({
   const appearance = {
     theme: highContrast ? "night" : "stripe",
     variables: {
-      colorPrimary: SDCB.blue,
-      colorBackground: highContrast ? "#111" : SDCB.white,
-      colorText: highContrast ? SDCB.hcYellow : SDCB.navy,
-      colorDanger: "#E53E3E",
-      fontFamily: "'Source Serif 4', Georgia, serif",
-      borderRadius: "8px",
-      spacingUnit: "4px",
+      colorPrimary:       SDCB.blue,
+      colorBackground:    highContrast ? "#111" : SDCB.white,
+      colorText:          highContrast ? SDCB.hcYellow : SDCB.navy,
+      colorDanger:        "#E53E3E",
+      fontFamily:         "'Source Serif 4', Georgia, serif",
+      borderRadius:       "8px",
+      spacingUnit:        "4px",
     },
   };
 
@@ -832,8 +780,6 @@ function CheckoutModal({
         <Elements stripe={stripePromise} options={elementsOptions}>
           <CheckoutForm
             total={total}
-            cart={cart}
-            shipping={shipping}
             onSuccess={onSuccess}
             onCancel={onClose}
             highContrast={highContrast}
@@ -848,16 +794,7 @@ function CheckoutModal({
 // ─────────────────────────────────────────────────────────────────────────────
 // CART DRAWER
 // ─────────────────────────────────────────────────────────────────────────────
-function CartDrawer({
-  cart,
-  open,
-  onClose,
-  onCheckout,
-  checkoutLoading,
-  checkoutError,
-  highContrast,
-  onAnnounce,
-}) {
+function CartDrawer({ cart, open, onClose, onCheckout, checkoutLoading, checkoutError, highContrast, onAnnounce }) {
   const closeRef = useRef(null);
 
   useEffect(() => {
@@ -892,13 +829,7 @@ function CartDrawer({
         boxShadow: "-8px 0 30px rgba(13,61,110,0.15)",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <p
           style={{
             margin: 0,
@@ -914,11 +845,7 @@ function CartDrawer({
           ref={closeRef}
           onClick={onClose}
           aria-label="Close cart"
-          style={{
-            ...btnStyle(highContrast, "secondary"),
-            fontSize: "1.1rem",
-            padding: "0.4rem 0.8rem",
-          }}
+          style={{ ...btnStyle(highContrast, "secondary"), fontSize: "1.1rem", padding: "0.4rem 0.8rem" }}
         >
           ✕ Close
         </button>
@@ -943,27 +870,13 @@ function CartDrawer({
                   : `1px solid ${SDCB.lightGray}`,
               }}
             >
-              <span
-                style={{
-                  color: highContrast ? SDCB.hcText : SDCB.navy,
-                  fontSize: "0.9rem",
-                  flex: 1,
-                }}
-              >
+              <span style={{ color: highContrast ? SDCB.hcText : SDCB.navy, fontSize: "0.9rem", flex: 1 }}>
                 {item.emoji} {item.name}{" "}
-                <span
-                  style={{ color: highContrast ? SDCB.hcYellow : SDCB.skyMid }}
-                >
+                <span style={{ color: highContrast ? SDCB.hcYellow : SDCB.skyMid }}>
                   ×{item.qty}
                 </span>
               </span>
-              <span
-                style={{
-                  fontWeight: 700,
-                  color: highContrast ? SDCB.hcYellow : SDCB.blue,
-                  marginLeft: 12,
-                }}
-              >
+              <span style={{ fontWeight: 700, color: highContrast ? SDCB.hcYellow : SDCB.blue, marginLeft: 12 }}>
                 ${(item.price * item.qty).toFixed(2)}
               </span>
             </div>
@@ -986,83 +899,39 @@ function CartDrawer({
 
           {/* Checkout error — shown inside drawer if PaymentIntent creation fails */}
           {checkoutError && (
-  <div
-    role="alert"
-    aria-live="assertive"
-    style={{
-      background: highContrast ? "#300" : "#FFF0F0",
-      border: `1.5px solid ${highContrast ? "#f88" : "#E53E3E"}`,
-      borderRadius: 8,
-      padding: "0.6rem 0.9rem",
-      color: highContrast ? "#faa" : "#C53030",
-      fontSize: "0.85rem",
-    }}
-  >
-    <strong>Error:</strong> {checkoutError}
-  </div>
-)}
+            <div
+              role="alert"
+              aria-live="assertive"
+              style={{
+                background: highContrast ? "#300" : "#FFF0F0",
+                border: `1.5px solid ${highContrast ? "#f88" : "#E53E3E"}`,
+                borderRadius: 8,
+                padding: "0.6rem 0.9rem",
+                color: highContrast ? "#faa" : "#C53030",
+                fontSize: "0.85rem",
+              }}
+            >
+              <strong>Error:</strong> {checkoutError}
+            </div>
+          )}
 
-{/* SHIPPING FORM */}
-<div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-  <input
-    placeholder="Full Name"
-    value={shipping.name}
-    onChange={(e) =>
-      setShipping((s) => ({ ...s, name: e.target.value }))
-    }
-    style={{ padding: 8, borderRadius: 6 }}
-  />
-
-  <input
-    placeholder="Email"
-    value={shipping.email}
-    onChange={(e) =>
-      setShipping((s) => ({ ...s, email: e.target.value }))
-    }
-    style={{ padding: 8, borderRadius: 6 }}
-  />
-
-  <input
-    placeholder="Address"
-    value={shipping.address}
-    onChange={(e) =>
-      setShipping((s) => ({ ...s, address: e.target.value }))
-    }
-    style={{ padding: 8, borderRadius: 6 }}
-  />
-
-  <input
-    placeholder="City"
-    value={shipping.city}
-    onChange={(e) =>
-      setShipping((s) => ({ ...s, city: e.target.value }))
-    }
-    style={{ padding: 8, borderRadius: 6 }}
-  />
-
-  <input
-    placeholder="ZIP"
-    value={shipping.zip}
-    onChange={(e) =>
-      setShipping((s) => ({ ...s, zip: e.target.value }))
-    }
-    style={{ padding: 8, borderRadius: 6 }}
-  />
-</div>
-
-<button
-  style={{
-    ...btnStyle(highContrast, "primary"),
-    marginTop: 8,
-    opacity: checkoutLoading ? 0.65 : 1,
-    cursor: checkoutLoading ? "not-allowed" : "pointer",
-  }}
-  onClick={onCheckout}
-  disabled={checkoutLoading}
->
-  {checkoutLoading
-    ? "⏳ Loading payment…"
-    : `Checkout — $${total.toFixed(2)}`}
+          <button
+            style={{
+              ...btnStyle(highContrast, "primary"),
+              marginTop: 8,
+              opacity: checkoutLoading ? 0.65 : 1,
+              cursor: checkoutLoading ? "not-allowed" : "pointer",
+            }}
+            onClick={onCheckout}
+            disabled={checkoutLoading}
+            aria-disabled={checkoutLoading}
+            aria-label={
+              checkoutLoading
+                ? "Loading payment form, please wait"
+                : `Proceed to checkout. Total: $${total.toFixed(2)}`
+            }
+          >
+            {checkoutLoading ? "⏳ Loading payment…" : `Checkout — $${total.toFixed(2)}`}
           </button>
         </>
       )}
@@ -1074,29 +943,22 @@ function CartDrawer({
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [cart, setCart] = useState([]);
-  const [shipping, setShipping] = useState({
-    name: "",
-    email: "",
-    address: "",
-    city: "",
-    zip: "",
-  });
-  const [category, setCategory] = useState("All");
-  const [search, setSearch] = useState("");
-  const [cartOpen, setCartOpen] = useState(false);
-  const [highContrast, setHighContrast] = useState(false);
-  const [announcement, setAnnouncement] = useState("");
-  const [smartPopup, setSmartPopup] = useState("");
-  const [recommendedItems, setRecommendedItems] = useState([]);
+  const [cart,            setCart]           = useState([]);
+  const [category,        setCategory]       = useState("All");
+  const [search,          setSearch]         = useState("");
+  const [cartOpen,        setCartOpen]       = useState(false);
+  const [highContrast,    setHighContrast]   = useState(false);
+  const [announcement,    setAnnouncement]   = useState("");
+  const [smartPopup,      setSmartPopup]     = useState("");
+  const [recommendedItems,setRecommendedItems] = useState([]);
 
   // ── Checkout state ──────────────────────────────────────────────────────
-  const [clientSecret, setClientSecret] = useState(null);
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
-  const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [checkoutError, setCheckoutError] = useState("");
+  const [clientSecret,    setClientSecret]   = useState(null);
+  const [checkoutOpen,    setCheckoutOpen]   = useState(false);
+  const [checkoutLoading, setCheckoutLoading]= useState(false);
+  const [checkoutError,   setCheckoutError]  = useState("");
 
-  const mainRef = useRef(null);
+  const mainRef   = useRef(null);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
   // ── Add to cart with smart recommendations ──────────────────────────────
@@ -1104,12 +966,12 @@ export default function App() {
     setCart((prev) => {
       const existing = prev.find((i) => i.id === product.id);
       const updatedCart = existing
-        ? prev.map((i) => (i.id === product.id ? { ...i, qty: i.qty + 1 } : i))
+        ? prev.map((i) => i.id === product.id ? { ...i, qty: i.qty + 1 } : i)
         : [...prev, { ...product, qty: 1 }];
 
-      const related = PRODUCTS.filter(
-        (p) => p.category === product.category && p.id !== product.id
-      ).slice(0, 2);
+      const related = PRODUCTS
+        .filter((p) => p.category === product.category && p.id !== product.id)
+        .slice(0, 2);
       setRecommendedItems(related);
 
       const recommendationText =
@@ -1133,7 +995,7 @@ export default function App() {
     setAnnouncement("Loading secure payment form. Please wait.");
 
     try {
-      const res = await fetch(`${process.env.REACT_APP_SERVER_URL}/create-payment-intent`, {
+      const res = await fetch("http://localhost:4242/create-payment-intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cart }),
@@ -1146,11 +1008,9 @@ export default function App() {
       }
 
       setClientSecret(data.clientSecret);
-      setCartOpen(false); // close drawer
-      setCheckoutOpen(true); // open payment modal
-      setAnnouncement(
-        "Payment form is ready. Please enter your payment details."
-      );
+      setCartOpen(false);        // close drawer
+      setCheckoutOpen(true);     // open payment modal
+      setAnnouncement("Payment form is ready. Please enter your payment details.");
     } catch (err) {
       setCheckoutError(err.message);
       setAnnouncement(`Could not load payment form: ${err.message}`);
@@ -1163,16 +1023,14 @@ export default function App() {
   const handlePaymentSuccess = useCallback(() => {
     setCheckoutOpen(false);
     setClientSecret(null);
-    setCart([]); // clear cart
-    setAnnouncement(
-      "Payment confirmed! Your order has been placed. Thank you for shopping with San Diego Center for the Blind."
-    );
+    setCart([]);                 // clear cart
+    setAnnouncement("Payment confirmed! Your order has been placed. Thank you for shopping with San Diego Center for the Blind.");
   }, []);
 
   const handleCheckoutClose = useCallback(() => {
     setCheckoutOpen(false);
     setClientSecret(null);
-    setCartOpen(true); // re-open cart drawer on cancel
+    setCartOpen(true);           // re-open cart drawer on cancel
     setAnnouncement("Payment cancelled. Returned to cart.");
   }, []);
 
@@ -1201,14 +1059,8 @@ export default function App() {
   // ── Keyboard shortcuts ──────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e) => {
-      if (e.altKey && e.key === "c") {
-        e.preventDefault();
-        setCartOpen((o) => !o);
-      }
-      if (e.altKey && e.key === "h") {
-        e.preventDefault();
-        setHighContrast((hc) => !hc);
-      }
+      if (e.altKey && e.key === "c") { e.preventDefault(); setCartOpen((o) => !o); }
+      if (e.altKey && e.key === "h") { e.preventDefault(); setHighContrast((hc) => !hc); }
       if (e.key === "Escape") {
         setCartOpen(false);
         // Let CheckoutModal handle its own Escape via focus trap
@@ -1219,7 +1071,7 @@ export default function App() {
   }, []);
 
   const filtered = PRODUCTS.filter((p) => {
-    const matchCat = category === "All" || p.category === category;
+    const matchCat    = category === "All" || p.category === category;
     const matchSearch =
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.description.toLowerCase().includes(search.toLowerCase());
@@ -1269,7 +1121,7 @@ export default function App() {
           transition: "top 0.2s",
         }}
         onFocus={(e) => (e.currentTarget.style.top = "8px")}
-        onBlur={(e) => (e.currentTarget.style.top = "-60px")}
+        onBlur={(e)  => (e.currentTarget.style.top = "-60px")}
       >
         Skip to main content
       </a>
@@ -1292,16 +1144,7 @@ export default function App() {
         }}
       >
         <div>
-          <p
-            style={{
-              margin: 0,
-              fontSize: "0.7rem",
-              letterSpacing: "0.15em",
-              textTransform: "uppercase",
-              color: hc ? SDCB.hcYellow : SDCB.skyMid,
-              fontWeight: 600,
-            }}
-          >
+          <p style={{ margin: 0, fontSize: "0.7rem", letterSpacing: "0.15em", textTransform: "uppercase", color: hc ? SDCB.hcYellow : SDCB.skyMid, fontWeight: 600 }}>
             San Diego Center for the Blind
           </p>
           <h1
@@ -1318,21 +1161,11 @@ export default function App() {
           </h1>
         </div>
 
-        <nav
-          aria-label="Header actions"
-          style={{
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
+        <nav aria-label="Header actions" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <button
             onClick={() => setHighContrast((hc) => !hc)}
             aria-pressed={highContrast}
-            aria-label={`${
-              highContrast ? "Disable" : "Enable"
-            } high contrast mode (Alt+H)`}
+            aria-label={`${highContrast ? "Disable" : "Enable"} high contrast mode (Alt+H)`}
             style={{
               background: hc ? SDCB.hcYellow : SDCB.blue,
               color: hc ? SDCB.hcBg : SDCB.white,
@@ -1349,13 +1182,8 @@ export default function App() {
           </button>
 
           <button
-            onClick={() => {
-              setCartOpen(true);
-              setAnnouncement("Cart opened");
-            }}
-            aria-label={`Open cart${
-              cartCount > 0 ? `, ${cartCount} items` : ""
-            } (Alt+C)`}
+            onClick={() => { setCartOpen(true); setAnnouncement("Cart opened"); }}
+            aria-label={`Open cart${cartCount > 0 ? `, ${cartCount} items` : ""} (Alt+C)`}
             style={{
               background: hc ? SDCB.hcYellow : SDCB.skyMid,
               color: hc ? SDCB.hcBg : SDCB.white,
@@ -1388,9 +1216,8 @@ export default function App() {
         }}
       >
         <span aria-hidden="true">⌨ </span>
-        Keyboard shortcuts: <kbd>Alt+C</kbd> Cart · <kbd>Alt+H</kbd> High
-        Contrast · <kbd>Tab</kbd> Navigate · <kbd>Enter</kbd> Add to Cart ·{" "}
-        <kbd>Esc</kbd> Close
+        Keyboard shortcuts: <kbd>Alt+C</kbd> Cart · <kbd>Alt+H</kbd> High Contrast ·{" "}
+        <kbd>Tab</kbd> Navigate · <kbd>Enter</kbd> Add to Cart · <kbd>Esc</kbd> Close
       </div>
 
       {/* Smart cart popup */}
@@ -1405,9 +1232,7 @@ export default function App() {
             zIndex: 2000,
             background: hc ? "#111" : SDCB.white,
             color: hc ? SDCB.hcYellow : SDCB.navy,
-            border: hc
-              ? `2px solid ${SDCB.hcYellow}`
-              : `2px solid ${SDCB.skyMid}`,
+            border: hc ? `2px solid ${SDCB.hcYellow}` : `2px solid ${SDCB.skyMid}`,
             borderRadius: 14,
             padding: "1rem 1.2rem",
             width: 320,
@@ -1421,14 +1246,7 @@ export default function App() {
 
           {recommendedItems.length > 0 && (
             <div style={{ marginTop: "0.8rem" }}>
-              <p
-                style={{
-                  margin: "0 0 0.45rem",
-                  fontSize: "0.8rem",
-                  opacity: 0.8,
-                  fontWeight: 600,
-                }}
-              >
+              <p style={{ margin: "0 0 0.45rem", fontSize: "0.8rem", opacity: 0.8, fontWeight: 600 }}>
                 Suggested items:
               </p>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1460,33 +1278,17 @@ export default function App() {
       <main
         id="main-content"
         ref={mainRef}
-        style={{
-          background: bg,
-          minHeight: "100vh",
-          padding: "1.5rem 2rem 4rem",
-        }}
+        style={{ background: bg, minHeight: "100vh", padding: "1.5rem 2rem 4rem" }}
       >
         {/* Search + Filter */}
         <section
           aria-label="Search and filter products"
-          style={{
-            marginBottom: "1.5rem",
-            display: "flex",
-            gap: "1rem",
-            flexWrap: "wrap",
-            alignItems: "flex-end",
-          }}
+          style={{ marginBottom: "1.5rem", display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "flex-end" }}
         >
           <div style={{ flex: 1, minWidth: 220 }}>
             <label
               htmlFor="search"
-              style={{
-                display: "block",
-                marginBottom: 6,
-                fontWeight: 600,
-                color: fg,
-                fontSize: "0.9rem",
-              }}
+              style={{ display: "block", marginBottom: 6, fontWeight: 600, color: fg, fontSize: "0.9rem" }}
             >
               Search Products
             </label>
@@ -1500,9 +1302,7 @@ export default function App() {
               style={{
                 width: "100%",
                 padding: "0.6rem 0.9rem",
-                border: hc
-                  ? `2px solid ${SDCB.hcYellow}`
-                  : `1.5px solid ${SDCB.lightGray}`,
+                border: hc ? `2px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`,
                 borderRadius: 8,
                 fontSize: "1rem",
                 background: hc ? "#111" : SDCB.white,
@@ -1512,49 +1312,20 @@ export default function App() {
             />
           </div>
 
-          <fieldset
-            style={{ border: "none", padding: 0, margin: 0 }}
-            aria-label="Filter by category"
-          >
-            <legend
-              style={{
-                fontWeight: 600,
-                color: fg,
-                fontSize: "0.9rem",
-                marginBottom: 6,
-              }}
-            >
+          <fieldset style={{ border: "none", padding: 0, margin: 0 }} aria-label="Filter by category">
+            <legend style={{ fontWeight: 600, color: fg, fontSize: "0.9rem", marginBottom: 6 }}>
               Filter by Category
             </legend>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               {CATEGORIES.map((cat) => (
                 <button
                   key={cat}
-                  onClick={() => {
-                    setCategory(cat);
-                    setAnnouncement(`Showing ${cat} products`);
-                  }}
+                  onClick={() => { setCategory(cat); setAnnouncement(`Showing ${cat} products`); }}
                   aria-pressed={category === cat}
                   style={{
-                    background:
-                      category === cat
-                        ? hc
-                          ? SDCB.hcYellow
-                          : SDCB.blue
-                        : hc
-                        ? "#222"
-                        : SDCB.white,
-                    color:
-                      category === cat
-                        ? hc
-                          ? SDCB.hcBg
-                          : SDCB.white
-                        : hc
-                        ? SDCB.hcYellow
-                        : SDCB.navy,
-                    border: hc
-                      ? `1.5px solid ${SDCB.hcYellow}`
-                      : `1.5px solid ${SDCB.lightGray}`,
+                    background: category === cat ? (hc ? SDCB.hcYellow : SDCB.blue) : (hc ? "#222" : SDCB.white),
+                    color:      category === cat ? (hc ? SDCB.hcBg : SDCB.white)   : (hc ? SDCB.hcYellow : SDCB.navy),
+                    border: hc ? `1.5px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`,
                     borderRadius: 20,
                     padding: "0.35rem 0.85rem",
                     fontWeight: 600,
@@ -1573,11 +1344,7 @@ export default function App() {
 
         <p
           aria-live="polite"
-          style={{
-            color: hc ? "#aaa" : SDCB.gray,
-            fontSize: "0.85rem",
-            marginBottom: "1rem",
-          }}
+          style={{ color: hc ? "#aaa" : SDCB.gray, fontSize: "0.85rem", marginBottom: "1rem" }}
         >
           {filtered.length} product{filtered.length !== 1 ? "s" : ""} found
         </p>
@@ -1603,15 +1370,9 @@ export default function App() {
           {filtered.length === 0 && (
             <p
               role="status"
-              style={{
-                color: hc ? SDCB.hcYellow : SDCB.gray,
-                gridColumn: "1/-1",
-                textAlign: "center",
-                padding: "2rem",
-              }}
+              style={{ color: hc ? SDCB.hcYellow : SDCB.gray, gridColumn: "1/-1", textAlign: "center", padding: "2rem" }}
             >
-              No products match your search. Try a different keyword or
-              category.
+              No products match your search. Try a different keyword or category.
             </p>
           )}
         </section>
@@ -1629,29 +1390,14 @@ export default function App() {
           borderTop: hc ? `2px solid ${SDCB.hcYellow}` : "none",
         }}
       >
-        <p
-          style={{
-            margin: 0,
-            color: hc ? SDCB.hcYellow : SDCB.white,
-            fontWeight: 600,
-          }}
-        >
+        <p style={{ margin: 0, color: hc ? SDCB.hcYellow : SDCB.white, fontWeight: 600 }}>
           San Diego Center for the Blind — Accessible Living Store
         </p>
         <p style={{ margin: "0.3rem 0 0", fontSize: "0.78rem" }}>
-          Changing Vision, Changing Lives · 5922 El Cajon Blvd, San Diego, CA
-          92115 · (619) 583-1542
+          Changing Vision, Changing Lives · 5922 El Cajon Blvd, San Diego, CA 92115 · (619) 583-1542
         </p>
-        <p
-          style={{
-            margin: "0.3rem 0 0",
-            fontSize: "0.75rem",
-            color: hc ? "#aaa" : SDCB.lightGray,
-            opacity: 0.7,
-          }}
-        >
-          Built with full keyboard navigation, screen reader support, and
-          AI-powered descriptions.
+        <p style={{ margin: "0.3rem 0 0", fontSize: "0.75rem", color: hc ? "#aaa" : SDCB.lightGray, opacity: 0.7 }}>
+          Built with full keyboard navigation, screen reader support, and AI-powered descriptions.
         </p>
       </footer>
 
@@ -1660,12 +1406,7 @@ export default function App() {
         <div
           onClick={() => setCartOpen(false)}
           aria-hidden="true"
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.45)",
-            zIndex: 999,
-          }}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 999 }}
         />
       )}
 
@@ -1673,10 +1414,7 @@ export default function App() {
       <CartDrawer
         cart={cart}
         open={cartOpen}
-        onClose={() => {
-          setCartOpen(false);
-          setAnnouncement("Cart closed");
-        }}
+        onClose={() => { setCartOpen(false); setAnnouncement("Cart closed"); }}
         onCheckout={handleCheckout}
         checkoutLoading={checkoutLoading}
         checkoutError={checkoutError}
