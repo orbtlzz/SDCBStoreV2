@@ -483,26 +483,43 @@ function CheckoutForm({
     });
 
     if (result.error) {
-      setStatus("error");
-      setErrorMsg(result.error.message ?? "An unexpected error occurred.");
-      onAnnounce(`Payment failed: ${result.error.message}`);
-      return;
-    } else {
-      setStatus("success");
-      onAnnounce("Payment successful! Thank you for your order.");
+  setStatus("error");
+  setErrorMsg(result.error.message ?? "An unexpected error occurred.");
+  onAnnounce(`Payment failed: ${result.error.message}`);
+  return;
+} else {
+  setStatus("success");
+  onAnnounce("Payment successful! Thank you for your order.");
 
-  const paymentIntentId = result.paymentIntent?.id;
+  // Retrieve latest payment intent safely
+  const { paymentIntent } = await stripe.retrievePaymentIntent(
+    result.paymentIntent?.client_secret || clientSecret
+  );
 
-  await fetch(`${process.env.REACT_APP_SERVER_URL}/create-order-after-payment`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      shipping,
-      paymentIntentId,
-    }),
-  });
+  const paymentIntentId = paymentIntent?.id;
+
+  console.log("✅ PaymentIntent ID:", paymentIntentId);
+
+  console.log("📦 Creating order after payment...");
+
+  // Send order to backend
+  const orderResponse = await fetch(
+    `${process.env.REACT_APP_SERVER_URL}/create-order-after-payment`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        shipping,
+        paymentIntentId,
+      }),
+    }
+  );
+
+  const orderData = await orderResponse.json();
+
+  console.log("📦 Order response:", orderData);
 
   setTimeout(onSuccess, 400);
 }
