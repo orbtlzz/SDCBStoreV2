@@ -944,6 +944,8 @@ function CartDrawer({ cart, open, onClose, onCheckout, checkoutLoading, checkout
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
   const [cart,            setCart]           = useState([]);
+  const [shipping, setShipping] = useState(null);
+  const [paymentIntentId, setPaymentIntentId] = useState(null);
   const [category,        setCategory]       = useState("All");
   const [search,          setSearch]         = useState("");
   const [cartOpen,        setCartOpen]       = useState(false);
@@ -995,7 +997,8 @@ export default function App() {
     setAnnouncement("Loading secure payment form. Please wait.");
 
     try {
-      const res = await fetch("http://localhost:4242/create-payment-intent", {
+      const res = await fetch(
+  `${process.env.REACT_APP_SERVER_URL}/create-payment-intent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cart }),
@@ -1020,12 +1023,26 @@ export default function App() {
   }, [cart]);
 
   // ── Called by CheckoutForm on successful confirmPayment ─────────────────
-  const handlePaymentSuccess = useCallback(() => {
-    setCheckoutOpen(false);
-    setClientSecret(null);
-    setCart([]);                 // clear cart
-    setAnnouncement("Payment confirmed! Your order has been placed. Thank you for shopping with San Diego Center for the Blind.");
-  }, []);
+  const handlePaymentSuccess = useCallback(async () => {
+  setCheckoutOpen(false);
+  setClientSecret(null);
+
+  try {
+    await fetch(`${process.env.REACT_APP_SERVER_URL}/create-order-after-payment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        paymentIntentId: currentPaymentIntentId, // you are NOT storing this yet (important!)
+        shipping: savedShippingData,
+      }),
+    });
+  } catch (err) {
+    console.error("Order creation failed:", err);
+  }
+
+  setCart([]);
+  setAnnouncement("Payment confirmed! Order created.");
+}, []);
 
   const handleCheckoutClose = useCallback(() => {
     setCheckoutOpen(false);
