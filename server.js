@@ -1,11 +1,22 @@
 import express from "express";
 import cors from "cors";
-import fetch from "node-fetch";
 import Stripe from "stripe";
 import nodemailer from "nodemailer";
 
+const app = express();
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+// IMPORTANT for Stripe webhooks later (kept simple for now)
+app.use(cors({
+  origin: process.env.CLIENT_URL || "*",
+}));
+
+app.use(express.json());
+
+// ─────────────────────────────
+// EMAIL SETUP
+// ─────────────────────────────
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
@@ -14,43 +25,47 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-const app = express();
-
-app.use(cors());
-app.use(express.json());
-
-
-// ─────────────────────────────────────────────
-// STRIPE PAYMENT ROUTE
-// ─────────────────────────────────────────────
+// ─────────────────────────────
+// STRIPE PAYMENT INTENT
+// (IMPORTANT: price should ideally be validated server-side)
+// ─────────────────────────────
 app.post("/create-payment-intent", async (req, res) => {
   try {
     const { cart } = req.body;
 
+    if (!cart || !Array.isArray(cart)) {
+      return res.status(400).json({ error: "Invalid cart" });
+    }
+
     const total = cart.reduce((sum, item) => {
-      return sum + item.price * item.qty;
+      return sum + (item.price || 0) * (item.qty || 1);
     }, 0);
 
     const paymentIntent = await stripe.paymentIntents.create({
       amount: Math.round(total * 100),
       currency: "usd",
+      automatic_payment_methods: { enabled: true },
     });
 
-    res.send({
+    res.json({
       clientSecret: paymentIntent.client_secret,
     });
+
   } catch (err) {
-    res.status(500).send({ error: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
-
-// ─────────────────────────────────────────────
-// STEP 3: SHIPPING LABEL ROUTE (THIS IS WHERE IT GOES)
-// ─────────────────────────────────────────────
+// ─────────────────────────────
+// SHIPPING LABEL (SHIPPO)
+// ─────────────────────────────
 app.post("/create-shipping-label", async (req, res) => {
   try {
     const { shipping } = req.body;
+
+    if (!shipping) {
+      return res.status(400).json({ error: "Missing shipping info" });
+    }
 
     const response = await fetch("https://api.goshippo.com/shipments/", {
       method: "POST",
@@ -97,27 +112,28 @@ app.post("/create-shipping-label", async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
+// ─────────────────────────────
+// ORDER AFTER PAYMENT
+// ─────────────────────────────
 app.post("/create-order-after-payment", async (req, res) => {
   try {
     const { shipping, paymentIntentId } = req.body;
 
-    // ─────────────────────────────────────
-    // 1. VERIFY STRIPE PAYMENT
-    // ─────────────────────────────────────
+    if (!paymentIntentId) {
+      return res.status(400).json({ error: "Missing paymentIntentId" });
+    }
+
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
 
     if (paymentIntent.status !== "succeeded") {
       return res.status(400).json({ error: "Payment not completed" });
     }
 
-    // ─────────────────────────────────────
-    // 2. CREATE SHIPMENT (SHIPPO)
-    // ─────────────────────────────────────
+    // Shippo label
     const response = await fetch("https://api.goshippo.com/shipments/", {
       method: "POST",
       headers: {
@@ -157,48 +173,29 @@ app.post("/create-order-after-payment", async (req, res) => {
 
     const data = await response.json();
 
-    // ─────────────────────────────────────
-    // 3. EXTRACT TRACKING INFO
-    // ─────────────────────────────────────
     const trackingNumber =
       data?.tracking_number || data?.object_id || "Processing";
 
     const trackingUrl =
       data?.tracking_url_provider || data?.tracking_url || "";
 
-    // ─────────────────────────────────────
-    // 4. SEND EMAIL TO CUSTOMER (STEP 5)
-    // ─────────────────────────────────────
+    // Email
     await transporter.sendMail({
-      from: '"SDCB Store" <your-email@gmail.com>',
+      from: `"SDCB Store" <${process.env.EMAIL_USER}>`,
       to: shipping.email,
       subject: "Your Order Confirmation + Tracking Info",
       html: `
         <h2>Thank you for your order!</h2>
-
         <p><strong>Name:</strong> ${shipping.name}</p>
         <p><strong>Address:</strong> ${shipping.address}, ${shipping.city}, ${shipping.state} ${shipping.zip}</p>
-
         <hr />
-
-        <h3>Tracking Information</h3>
-        <p><strong>Tracking Number:</strong> ${trackingNumber}</p>
-
-        <p>
-          Track your package here:<br/>
-          <a href="${trackingUrl}" target="_blank">
-            ${trackingUrl || "Tracking link will update soon"}
-          </a>
-        </p>
-
-        <p>We’ll notify you when your order ships.</p>
+        <h3>Tracking</h3>
+        <p>${trackingNumber}</p>
+        <a href="${trackingUrl}">${trackingUrl}</a>
       `,
     });
 
-    // ─────────────────────────────────────
-    // 5. RETURN RESPONSE
-    // ─────────────────────────────────────
-    return res.json({
+    res.json({
       success: true,
       shipment: data,
       trackingNumber,
@@ -206,17 +203,15 @@ app.post("/create-order-after-payment", async (req, res) => {
     });
 
   } catch (err) {
-    console.error(err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// ─────────────────────────────────────────────
-// SERVER START
-// ─────────────────────────────────────────────
+// ─────────────────────────────
+// SERVER START (RENDER SAFE)
+// ─────────────────────────────
 const PORT = process.env.PORT || 4242;
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
-
