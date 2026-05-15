@@ -439,6 +439,8 @@ function ProductCard({ product, onAddToCart, onAnnounce, highContrast }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function CheckoutForm({
   total,
+  cart,
+  shipping,
   onSuccess,
   onCancel,
   highContrast,
@@ -475,25 +477,23 @@ function CheckoutForm({
     const result = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        // Required for redirect-based payment methods.
-        // For card payments this URL is never visited.
-        return_url: "http://localhost:3000",
+         return_url: window.location.origin,
       },
       redirect: "if_required",
     });
 
-    if (error) {
-      // error.type === "card_error" | "validation_error" | other
+    if (result.error) {
       setStatus("error");
-      setErrorMsg(error.message ?? "An unexpected error occurred.");
-      onAnnounce(`Payment failed: ${error.message}`);
+      setErrorMsg(result.error.message ?? "An unexpected error occurred.");
+      onAnnounce(`Payment failed: ${result.error.message}`);
+      return;
     } else {
-  setStatus("success");
-  onAnnounce("Payment successful! Thank you for your order.");
+      setStatus("success");
+      onAnnounce("Payment successful! Thank you for your order.");
 
   const paymentIntentId = result.paymentIntent?.id;
 
-  await fetch("http://localhost:4242/create-order-after-payment", {
+  await fetch(`${process.env.REACT_APP_SERVER_URL}/create-order-after-payment`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -815,6 +815,8 @@ function CheckoutModal({
         <Elements stripe={stripePromise} options={elementsOptions}>
           <CheckoutForm
             total={total}
+            cart={cart}
+            shipping={shipping}
             onSuccess={onSuccess}
             onCancel={onClose}
             highContrast={highContrast}
@@ -1114,7 +1116,7 @@ export default function App() {
     setAnnouncement("Loading secure payment form. Please wait.");
 
     try {
-      const res = await fetch("http://localhost:4242/create-payment-intent", {
+      const res = await fetch(`${process.env.REACT_APP_SERVER_URL}/create-payment-intent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ cart }),
