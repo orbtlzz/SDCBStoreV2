@@ -9,9 +9,6 @@ const shippo = Shippo(process.env.SHIPPO_API_KEY);
 
 const app = express();
 
-// ⚠️ Stripe secret key comes from Render environment variables
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
 app.use(cors());
 app.use(express.json());
 
