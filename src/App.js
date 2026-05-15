@@ -955,41 +955,83 @@ function CartDrawer({
 
           {/* Checkout error — shown inside drawer if PaymentIntent creation fails */}
           {checkoutError && (
-            <div
-              role="alert"
-              aria-live="assertive"
-              style={{
-                background: highContrast ? "#300" : "#FFF0F0",
-                border: `1.5px solid ${highContrast ? "#f88" : "#E53E3E"}`,
-                borderRadius: 8,
-                padding: "0.6rem 0.9rem",
-                color: highContrast ? "#faa" : "#C53030",
-                fontSize: "0.85rem",
-              }}
-            >
-              <strong>Error:</strong> {checkoutError}
-            </div>
-          )}
+  <div
+    role="alert"
+    aria-live="assertive"
+    style={{
+      background: highContrast ? "#300" : "#FFF0F0",
+      border: `1.5px solid ${highContrast ? "#f88" : "#E53E3E"}`,
+      borderRadius: 8,
+      padding: "0.6rem 0.9rem",
+      color: highContrast ? "#faa" : "#C53030",
+      fontSize: "0.85rem",
+    }}
+  >
+    <strong>Error:</strong> {checkoutError}
+  </div>
+)}
 
-          <button
-            style={{
-              ...btnStyle(highContrast, "primary"),
-              marginTop: 8,
-              opacity: checkoutLoading ? 0.65 : 1,
-              cursor: checkoutLoading ? "not-allowed" : "pointer",
-            }}
-            onClick={onCheckout}
-            disabled={checkoutLoading}
-            aria-disabled={checkoutLoading}
-            aria-label={
-              checkoutLoading
-                ? "Loading payment form, please wait"
-                : `Proceed to checkout. Total: $${total.toFixed(2)}`
-            }
-          >
-            {checkoutLoading
-              ? "⏳ Loading payment…"
-              : `Checkout — $${total.toFixed(2)}`}
+{/* SHIPPING FORM */}
+<div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+  <input
+    placeholder="Full Name"
+    value={shipping.name}
+    onChange={(e) =>
+      setShipping((s) => ({ ...s, name: e.target.value }))
+    }
+    style={{ padding: 8, borderRadius: 6 }}
+  />
+
+  <input
+    placeholder="Email"
+    value={shipping.email}
+    onChange={(e) =>
+      setShipping((s) => ({ ...s, email: e.target.value }))
+    }
+    style={{ padding: 8, borderRadius: 6 }}
+  />
+
+  <input
+    placeholder="Address"
+    value={shipping.address}
+    onChange={(e) =>
+      setShipping((s) => ({ ...s, address: e.target.value }))
+    }
+    style={{ padding: 8, borderRadius: 6 }}
+  />
+
+  <input
+    placeholder="City"
+    value={shipping.city}
+    onChange={(e) =>
+      setShipping((s) => ({ ...s, city: e.target.value }))
+    }
+    style={{ padding: 8, borderRadius: 6 }}
+  />
+
+  <input
+    placeholder="ZIP"
+    value={shipping.zip}
+    onChange={(e) =>
+      setShipping((s) => ({ ...s, zip: e.target.value }))
+    }
+    style={{ padding: 8, borderRadius: 6 }}
+  />
+</div>
+
+<button
+  style={{
+    ...btnStyle(highContrast, "primary"),
+    marginTop: 8,
+    opacity: checkoutLoading ? 0.65 : 1,
+    cursor: checkoutLoading ? "not-allowed" : "pointer",
+  }}
+  onClick={onCheckout}
+  disabled={checkoutLoading}
+>
+  {checkoutLoading
+    ? "⏳ Loading payment…"
+    : `Checkout — $${total.toFixed(2)}`}
           </button>
         </>
       )}
@@ -1002,6 +1044,13 @@ function CartDrawer({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
   const [cart, setCart] = useState([]);
+  const [shipping, setShipping] = useState({
+    name: "",
+    email: "",
+    address: "",
+    city: "",
+    zip: "",
+  });
   const [category, setCategory] = useState("All");
   const [search, setSearch] = useState("");
   const [cartOpen, setCartOpen] = useState(false);
