@@ -13,7 +13,9 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // STRIPE INIT  ← replace with your real publishable key
 // ─────────────────────────────────────────────────────────────────────────────
-const stripePromise = loadStripe("YOUR_PUBLISHABLE_KEY_HERE");
+const stripePromise = loadStripe(
+  "pk_test_51QPYmlRvM82IXdmIuXLoDX28R22de33njhGVXDEfD58tyGXrSFWns6LUNXlhUAx9cjusD9SWzOhHpIMJhQMmpWRr002Z5VXYAE"
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SDCB Brand Colors

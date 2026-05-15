@@ -6,21 +6,15 @@
   "keywords": [],
   "main": "src/index.tsx",
   "dependencies": {
-    "@stripe/react-stripe-js": "^2.9.0",
-    "@stripe/stripe-js": "^4.10.0",
-    "cors": "^2.8.6",
-    "dotenv": "^17.4.2",
-    "express": "^5.2.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-scripts": "^5.0.0",
-    "stripe": "^22.1.1"
+    "shippo": "^2.18.0"
   },
   "devDependencies": {
     "@types/react": "19.0.0",
     "@types/react-dom": "19.0.0",
-    "loader-utils": "3.2.1",
-    "typescript": "5.7.2"
+    "loader-utils": "3.2.1"
   },
   "scripts": {
     "start": "react-scripts start",
