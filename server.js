@@ -3,25 +3,7 @@ import cors from "cors";
 import Stripe from "stripe";
 import nodemailer from "nodemailer";
 
-const transporter = nodemailer.createTransport({
-  service: "gmail",
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
-
-await transporter.sendMail({
-  from: process.env.EMAIL_USER,
-  to: "someone@example.com",
-  subject: "Test",
-  text: "Hello!",
-});
-
-
 const app = express();
-
-
 
 // ─────────────────────────────────────────────────────
 // STRIPE
@@ -29,8 +11,7 @@ const app = express();
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 // ─────────────────────────────────────────────────────
-// CORS
-// Must be registered BEFORE routes and BEFORE express.json()
+// CORS  (registered BEFORE routes and express.json)
 // ─────────────────────────────────────────────────────
 app.use(
   cors({
@@ -44,10 +25,33 @@ app.use(
 
 app.use(express.json());
 
+// ─────────────────────────────────────────────────────
+// NODEMAILER — Gmail App Password setup
+// 1. Enable 2-Step Verification on your Google account
+// 2. Google Account → Security → App Passwords
+// 3. Generate a 16-char password for "Mail"
+// 4. Set EMAIL_PASS=<that 16-char password> in Render env vars
+// 5. EMAIL_USER=your.address@gmail.com
+// ─────────────────────────────────────────────────────
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
 
+// Verify config at startup. Non-blocking — no top-level await, no test send.
+transporter.verify((err) => {
+  if (err) {
+    console.error("❌ Nodemailer config error:", err.message);
+  } else {
+    console.log("✅ Nodemailer ready");
+  }
+});
 
 // ─────────────────────────────────────────────────────
-// HEALTH CHECK — lets you confirm the server is alive on Render
+// HEALTH CHECK
 // ─────────────────────────────────────────────────────
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
@@ -85,12 +89,10 @@ app.post("/create-payment-intent", async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────
-// HELPER — Shippo: create shipment and purchase label in one flow
-//
-// Shippo flow that actually returns a tracking number:
-//   1. POST /shipments/  (async:false → rates are included in response)
-//   2. Pick cheapest rate
-//   3. POST /transactions/ with that rate's object_id → tracking number lives HERE
+// HELPER — Shippo: create shipment and purchase label
+//   1. POST /shipments/  (async:false → rates included in response)
+//   2. Pick cheapest valid rate
+//   3. POST /transactions/ with rate.object_id → tracking number lives HERE
 // ─────────────────────────────────────────────────────
 async function createShippoLabel(shipping) {
   const shippoHeaders = {
@@ -98,7 +100,7 @@ async function createShippoLabel(shipping) {
     Authorization: `ShippoToken ${process.env.SHIPPO_API_KEY}`,
   };
 
-  // ── Step 1: Create shipment ──────────────────────────────────────────────
+  // ── Step 1: Create shipment ──────────────────────────────────────────
   console.log("🚚 Creating Shippo shipment...");
   const shipmentRes = await fetch("https://api.goshippo.com/shipments/", {
     method: "POST",
@@ -114,7 +116,8 @@ async function createShippoLabel(shipping) {
       },
       address_to: {
         name: shipping.name,
-        street1: shipping.address1,
+        // FIX: frontend sends `address`, not `address1`
+        street1: shipping.address,
         city: shipping.city,
         state: shipping.state || "CA",
         zip: shipping.zip,
@@ -130,7 +133,7 @@ async function createShippoLabel(shipping) {
           mass_unit: "lb",
         },
       ],
-      async: false, // wait for rates before returning
+      async: false,
     }),
   });
 
@@ -150,7 +153,6 @@ async function createShippoLabel(shipping) {
     );
   }
 
-  // Pick the cheapest available rate
   const cheapestRate = rates
     .filter((r) => r.object_state === "VALID")
     .sort((a, b) => parseFloat(a.amount) - parseFloat(b.amount))[0];
@@ -163,7 +165,7 @@ async function createShippoLabel(shipping) {
     `📮 Cheapest rate: ${cheapestRate.provider} ${cheapestRate.servicelevel?.name} — $${cheapestRate.amount}`
   );
 
-  // ── Step 2: Purchase label (transaction) — tracking number is HERE ───────
+  // ── Step 2: Purchase label (transaction) ─────────────────────────────
   console.log("🏷️  Purchasing Shippo label...");
   const txRes = await fetch("https://api.goshippo.com/transactions/", {
     method: "POST",
@@ -184,13 +186,12 @@ async function createShippoLabel(shipping) {
     );
   }
 
-  // ✅ SAFETY NET (ADD HERE)
   console.log("📦 FINAL SHIPPO RESULT:", {
     trackingNumber: txData.tracking_number,
-    trackingUrl: txData.tracking_url_provider,
-    labelUrl: txData.label_url,
-    carrier: txData.tracking_carrier,
-    status: txData.status,
+    trackingUrl:    txData.tracking_url_provider,
+    labelUrl:       txData.label_url,
+    carrier:        txData.tracking_carrier,
+    status:         txData.status,
   });
 
   return {
@@ -213,19 +214,13 @@ app.post("/create-order-after-payment", async (req, res) => {
   try {
     const { shipping, paymentIntentId } = req.body;
 
-    // ── Validate required fields ─────────────────────────────────────────
     if (!paymentIntentId) {
       console.error("❌ Missing paymentIntentId");
       return res.status(400).json({ error: "Missing paymentIntentId" });
     }
 
-    const requiredShippingFields = [
-      "name",
-      "email",
-      "address1",
-      "city",
-      "zip",
-    ];
+    // FIX: validate `address` (matches frontend), not `address1`
+    const requiredShippingFields = ["name", "email", "address", "city", "zip"];
     for (const field of requiredShippingFields) {
       if (!shipping?.[field]) {
         console.error(`❌ Missing shipping field: ${field}`);
@@ -233,7 +228,7 @@ app.post("/create-order-after-payment", async (req, res) => {
       }
     }
 
-    // ── Verify payment with Stripe ───────────────────────────────────────
+    // ── Verify payment with Stripe ───────────────────────────────────
     console.log("💳 Retrieving PaymentIntent:", paymentIntentId);
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
     console.log("✅ Stripe status:", paymentIntent.status);
@@ -244,13 +239,12 @@ app.post("/create-order-after-payment", async (req, res) => {
         .json({ error: `Payment not completed. Status: ${paymentIntent.status}` });
     }
 
-    // ── Create Shippo label ──────────────────────────────────────────────
+    // ── Create Shippo label ──────────────────────────────────────────
     let shippoResult;
     try {
       shippoResult = await createShippoLabel(shipping);
       console.log("✅ Shippo tracking:", shippoResult.trackingNumber);
     } catch (shippoErr) {
-      // Don't block the whole order if Shippo fails — log it and continue
       console.error("❌ Shippo error (non-fatal):", shippoErr.message);
       shippoResult = {
         trackingNumber: "Pending — contact store for tracking",
@@ -260,8 +254,45 @@ app.post("/create-order-after-payment", async (req, res) => {
       };
     }
 
-    // ── Send confirmation email (non-blocking) ───────────────────────────
-console.log("📧 Sending confirmation email to:", shipping.email);
+    // ── Send confirmation email (RESTORED) ───────────────────────────
+    console.log("📧 Sending confirmation email to:", shipping.email);
+    try {
+      await transporter.sendMail({
+        from:    `"SDCB Store" <${process.env.EMAIL_USER}>`,
+        to:      shipping.email,
+        subject: "Your Order Confirmation + Tracking Info — SDCB Store",
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #0D3D6E;">Thank you for your order!</h2>
+            <p>We appreciate your support of the San Diego Center for the Blind.</p>
+
+            <h3>Shipping To</h3>
+            <p>
+              ${shipping.name}<br/>
+              ${shipping.address}<br/>
+              ${shipping.city}, ${shipping.state || "CA"} ${shipping.zip}
+            </p>
+
+            <h3>Tracking</h3>
+            <p><strong>Carrier:</strong> ${shippoResult.carrier || "TBD"}</p>
+            <p><strong>Tracking Number:</strong> ${shippoResult.trackingNumber}</p>
+            ${
+              shippoResult.trackingUrl
+                ? `<p><a href="${shippoResult.trackingUrl}" style="color: #1B75BB;">Track your package</a></p>`
+                : ""
+            }
+
+            <hr/>
+            <p style="font-size: 0.85rem; color: #666;">
+              San Diego Center for the Blind · 5922 El Cajon Blvd, San Diego, CA 92115 · (619) 583-1542
+            </p>
+          </div>
+        `,
+      });
+      console.log("✅ Email sent to:", shipping.email);
+    } catch (mailErr) {
+      console.error("❌ Email send failed (non-fatal):", mailErr.message);
+    }
 
     return res.json({
       success:        true,
@@ -270,14 +301,13 @@ console.log("📧 Sending confirmation email to:", shipping.email);
       labelUrl:       shippoResult.labelUrl,
     });
   } catch (err) {
-    // Log full stack so it appears in Render logs
     console.error("❌ /create-order-after-payment fatal error:", err.stack);
     return res.status(500).json({ error: err.message });
   }
 });
 
 // ─────────────────────────────────────────────────────
-// STANDALONE SHIPPING LABEL ROUTE (kept as-is, uses corrected helper)
+// STANDALONE SHIPPING LABEL ROUTE
 // ─────────────────────────────────────────────────────
 app.post("/create-shipping-label", async (req, res) => {
   console.log("📥 /create-shipping-label called");
