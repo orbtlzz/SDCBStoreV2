@@ -236,22 +236,24 @@ app.post("/create-order-after-payment", async (req, res) => {
       };
     }
 
-    // ── Send confirmation email ──────────────────────────────────────────
-    console.log("📧 Sending confirmation email to:", shipping.email);
-    await resend.emails.send({
-      from: "SDCB Store <onboarding@resend.dev>",
-      to: shipping.email,
-      subject: "Your Order Confirmation + Tracking Info — SDCB Store",
-      html: `
-        <div style="font-family: Arial, sans-serif;">
-          <h2>Thank you for your order!</h2>
+    // ── Send confirmation email (non-blocking) ───────────────────────────
+console.log("📧 Sending confirmation email to:", shipping.email);
 
-          <h3>Shipping To</h3>
-          <p>
-            ${shipping.name}<br/>
-            ${shipping.address}<br/>
-            ${shipping.city}, ${shipping.state || "CA"} ${shipping.zip}
-          </p>
+try {
+  await resend.emails.send({
+    from: "SDCB Store <onboarding@resend.dev>",
+    to: shipping.email,
+    subject: "Your Order Confirmation + Tracking Info — SDCB Store",
+    html: `
+      <div style="font-family: Arial, sans-serif;">
+        <h2>Thank you for your order!</h2>
+
+        <h3>Shipping To</h3>
+        <p>
+          ${shipping.name}<br/>
+          ${shipping.address}<br/>
+          ${shipping.city}, ${shipping.state || "CA"} ${shipping.zip}
+        </p>
 
         <h3>Tracking</h3>
         <p><strong>Carrier:</strong> ${shippoResult.carrier || "TBD"}</p>
@@ -259,7 +261,11 @@ app.post("/create-order-after-payment", async (req, res) => {
       </div>
     `,
   });
-    console.log("✅ Email sent to:", shipping.email);
+
+  console.log("✅ Email sent to:", shipping.email);
+} catch (emailErr) {
+  console.error("❌ Email failed (non-fatal):", emailErr.message);
+}
 
     return res.json({
       success:        true,
