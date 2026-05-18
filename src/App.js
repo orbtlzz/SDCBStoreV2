@@ -13,8 +13,7 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // STRIPE INIT  ← replace with your real publishable key
 // ─────────────────────────────────────────────────────────────────────────────
-const stripePromise = loadStripe("YOUR_PUBLISHABLE_KEY_HERE");
-
+const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
 // ─────────────────────────────────────────────────────────────────────────────
 // SDCB Brand Colors
 // ─────────────────────────────────────────────────────────────────────────────
