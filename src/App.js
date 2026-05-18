@@ -497,7 +497,12 @@ function CheckoutForm({ total, onSuccess, onCancel, highContrast, onAnnounce }) 
   }
 
   const paymentIntent = result.paymentIntent;
-  if (!paymentIntent) return;
+
+  if (!paymentIntent) {
+    setStatus("error");
+    setErrorMsg("Missing payment intent.");
+    return;
+  }
 
   if (paymentIntent.status !== "succeeded") {
     setStatus("error");
