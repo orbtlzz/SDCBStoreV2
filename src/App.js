@@ -459,32 +459,34 @@ function CheckoutForm({ total, onSuccess, onCancel, highContrast, onAnnounce }) 
     // confirmPayment with redirect: "if_required" means:
     //   • card payments resolve here with a result object (no redirect)
     //   • redirect-based methods (bank, iDEAL, etc.) still redirect to return_url
-    const result = await stripe.confirmPayment({
+   const result = await stripe.confirmPayment({
       elements,
-      confirmParams: {
-        // Required for redirect-based payment methods.
-        // For card payments this URL is never visited.
-        return_url: "http://localhost:3000",
-      },
       redirect: "if_required",
     });
-
+    
     if (result.error) {
       setStatus("error");
       setErrorMsg(result.error.message ?? "An unexpected error occurred.");
       onAnnounce(`Payment failed: ${result.error.message}`);
-    } else {
-      const paymentIntent = result.paymentIntent;
+      return;
+    }
+    
+    const paymentIntent = result.paymentIntent;
+    
+    if (!paymentIntent) return;
 
+    if (paymentIntent.status !== "succeeded") {
+      setStatus("error");
+      setErrorMsg(`Payment status: ${paymentIntent.status}`);
+      return;
+    }
       setStatus("success");
       onAnnounce("Payment successful! Thank you for your order.");
-
+    
       setTimeout(() => {
-         onSuccess(paymentIntent.id);
+        onSuccess(paymentIntent.id);
       }, 400);
     }
-  };
-
   if (status === "success") {
     return (
       <div
