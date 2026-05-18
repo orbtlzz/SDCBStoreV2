@@ -10,10 +10,22 @@ import {
   useElements,
 } from "@stripe/react-stripe-js";
 
+// ─── Validate frontend env vars at boot ────────────────────────────
+const REQUIRED_ENV = {
+  REACT_APP_SERVER_URL:           process.env.REACT_APP_SERVER_URL,
+  REACT_APP_STRIPE_PUBLISHABLE_KEY: process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY,
+};
+for (const [key, val] of Object.entries(REQUIRED_ENV)) {
+  if (!val) console.error(`❌ Missing env var at build time: ${key}`);
+  else      console.log(`✅ ${key} is set (${val.slice(0, 20)}…)`);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // STRIPE INIT  ← replace with your real publishable key
 // ─────────────────────────────────────────────────────────────────────────────
+
 const stripePromise = loadStripe(process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY);
+
 // ─────────────────────────────────────────────────────────────────────────────
 // SDCB Brand Colors
 // ─────────────────────────────────────────────────────────────────────────────
@@ -450,12 +462,17 @@ function CheckoutForm({ total, onPaymentComplete, onCancel, highContrast, onAnno
   
     const result = await stripe.confirmPayment({
       elements,
+      // REQUIRED: even with `redirect: "if_required"`, Stripe validates
+      // this is present because automatic_payment_methods may include
+      // redirect-based methods (Link, Cash App, bank redirects, etc.)
+      confirmParams: {
+        return_url: window.location.origin,
+      },
       redirect: "if_required",
     });
   
     console.log("🟡 [CheckoutForm] confirmPayment result:", result);
   
-    // 1. Handle Stripe error FIRST
     if (result.error) {
       console.error("❌ Stripe error:", result.error);
       setStatus("error");
@@ -464,9 +481,7 @@ function CheckoutForm({ total, onPaymentComplete, onCancel, highContrast, onAnno
       return;
     }
   
-    // 2. Validate PaymentIntent
     const paymentIntent = result.paymentIntent;
-  
     if (!paymentIntent) {
       console.error("❌ Missing paymentIntent");
       setStatus("error");
@@ -477,21 +492,17 @@ function CheckoutForm({ total, onPaymentComplete, onCancel, highContrast, onAnno
   
     console.log("🟡 PaymentIntent status:", paymentIntent.status);
   
-    // 3. Only proceed if succeeded
     if (paymentIntent.status !== "succeeded") {
       console.warn("⚠️ Payment not succeeded:", paymentIntent.status);
-    
       setStatus("error");
       setErrorMsg(`Payment status: ${paymentIntent.status}`);
       onAnnounce(`Payment not completed. Status: ${paymentIntent.status}`);
-    
       return;
     }
-      
-    // 4. MOVE TO SHIPPING STEP (IMPORTANT)
-onAnnounce("Payment successful! Moving to shipping step.");
-onPaymentComplete(paymentIntent.id);
-return;
+  
+    console.log("✅ Payment SUCCEEDED. Handing off id:", paymentIntent.id);
+    onAnnounce("Payment successful! Moving to shipping step.");
+    onPaymentComplete(paymentIntent.id);
   };
 
   const isSubmitting = status === "submitting";
