@@ -1116,7 +1116,10 @@ export default function App() {
   `${process.env.REACT_APP_SERVER_URL}/create-payment-intent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cart }),
+        body: JSON.stringify({
+          cart,
+          shipping,
+        }),
       });
 
       const data = await res.json();
@@ -1167,7 +1170,7 @@ export default function App() {
     setClientSecret(null);
     setCartOpen(true);           // re-open cart drawer on cancel
     setAnnouncement("Payment cancelled. Returned to cart.");
-  }, []);
+  }, [cart, shipping]);
 
   // ── Handle redirect-based payment return (e.g. bank redirect) ──────────
   // When a redirect payment method returns, Stripe appends
