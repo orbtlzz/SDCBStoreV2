@@ -1,12 +1,12 @@
 import express from "express";
 import cors from "cors";
 import Stripe from "stripe";
-import nodemailer from "nodemailer";
-// node-fetch removed — Node 18+ (Render default) has native fetch built in.
-// If you ever need to pin to an older Node, install node-fetch@2 and use:
-//   import fetch from "node-fetch";
+import { Resend } from "resend";
+
 
 const app = express();
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ─────────────────────────────────────────────────────
 // STRIPE
@@ -29,35 +29,7 @@ app.use(
 
 app.use(express.json());
 
-// ─────────────────────────────────────────────────────
-// NODEMAILER — Gmail App Password setup
-// 1. Enable 2-Step Verification on your Google account
-// 2. Go to: Google Account → Security → App Passwords
-// 3. Generate a 16-char password for "Mail"
-// 4. Set EMAIL_PASS=<that 16-char password> in Render env vars
-// 5. EMAIL_USER=your.address@gmail.com
-// ─────────────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false, // true only for 465
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false,
-  },
-});
 
-// Validate the transporter once at startup so misconfiguration is visible in logs
-transporter.verify((err) => {
-  if (err) {
-    console.error("❌ Nodemailer config error:", err.message);
-  } else {
-    console.log("✅ Nodemailer ready");
-  }
-});
 
 // ─────────────────────────────────────────────────────
 // HEALTH CHECK — lets you confirm the server is alive on Render
@@ -266,38 +238,27 @@ app.post("/create-order-after-payment", async (req, res) => {
 
     // ── Send confirmation email ──────────────────────────────────────────
     console.log("📧 Sending confirmation email to:", shipping.email);
-    await transporter.sendMail({
-      from:    `"SDCB Store" <${process.env.EMAIL_USER}>`,
-      to:      shipping.email,
+    await resend.emails.send({
+      from: "SDCB Store <onboarding@resend.dev>",
+      to: shipping.email,
       subject: "Your Order Confirmation + Tracking Info — SDCB Store",
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #0D3D6E;">Thank you for your order!</h2>
-          <p>We appreciate your support of the San Diego Center for the Blind.</p>
+        <div style="font-family: Arial, sans-serif;">
+          <h2>Thank you for your order!</h2>
 
           <h3>Shipping To</h3>
           <p>
             ${shipping.name}<br/>
-            ${shipping.address1}<br/>
+            ${shipping.address}<br/>
             ${shipping.city}, ${shipping.state || "CA"} ${shipping.zip}
           </p>
 
-          <h3>Tracking</h3>
-          <p><strong>Carrier:</strong> ${shippoResult.carrier || "TBD"}</p>
-          <p><strong>Tracking Number:</strong> ${shippoResult.trackingNumber}</p>
-          ${
-            shippoResult.trackingUrl
-              ? `<p><a href="${shippoResult.trackingUrl}" style="color: #1B75BB;">Track your package</a></p>`
-              : ""
-          }
-
-          <hr/>
-          <p style="font-size: 0.85rem; color: #666;">
-            San Diego Center for the Blind · 5922 El Cajon Blvd, San Diego, CA 92115 · (619) 583-1542
-          </p>
-        </div>
-      `,
-    });
+        <h3>Tracking</h3>
+        <p><strong>Carrier:</strong> ${shippoResult.carrier || "TBD"}</p>
+        <p><strong>Tracking Number:</strong> ${shippoResult.trackingNumber}</p>
+      </div>
+    `,
+  });
     console.log("✅ Email sent to:", shipping.email);
 
     return res.json({
