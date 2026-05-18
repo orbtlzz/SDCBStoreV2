@@ -452,76 +452,65 @@ function CheckoutForm({ total, onPaymentComplete, onCancel, highContrast, onAnno
       elements,
       redirect: "if_required",
     });
-
-  console.log("🟡 [CheckoutForm] confirmPayment result:", result);
-
-  if (result.error) {
-    console.error("❌ [CheckoutForm] Stripe error:", result.error);
-    setStatus("error");
-    setErrorMsg(result.error.message ?? "An unexpected error occurred.");
-    onAnnounce(`Payment failed: ${result.error.message}`);
-    return;
-  }
-
-  const paymentIntent = result.paymentIntent;
-  console.log("🟡 [CheckoutForm] paymentIntent:", paymentIntent);
-
-  if (!paymentIntent) {
-    console.error("❌ [CheckoutForm] No paymentIntent in result");
-    setStatus("error");
-    setErrorMsg("Payment ID missing. Please contact support.");
-    onAnnounce("Payment ID missing. Please contact support.");
-    return;
-  }
-
-  // EXPLICIT status check — only proceed if Stripe confirms success
-  if (paymentIntent.status !== "succeeded") {
-    console.warn("⚠️ [CheckoutForm] Status not succeeded:", paymentIntent.status);
-    setStatus("error");
-    setErrorMsg(`Payment status is "${paymentIntent.status}". Please try again.`);
-    onAnnounce(`Payment status: ${paymentIntent.status}`);
-    return;
-  }
-
-  console.log("✅ [CheckoutForm] Payment SUCCEEDED:", paymentIntent.id);
-
-  try {
-    console.log("📦 Calling backend order route...");
   
-    const response = await fetch(
-      "https://YOUR-RENDER-BACKEND.onrender.com/create-order-after-payment",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          paymentIntentId: paymentIntent.id,
-          shipping,
-        }),
-      }
-    );
+    console.log("🟡 [CheckoutForm] confirmPayment result:", result);
   
-    console.log("📨 Backend response status:", response.status);
+    // 1. Handle Stripe error FIRST
+    if (result.error) {
+      console.error("❌ Stripe error:", result.error);
+      setStatus("error");
+      setErrorMsg(result.error.message ?? "An unexpected error occurred.");
+      onAnnounce(`Payment failed: ${result.error.message}`);
+      return;
+    }
   
-    const data = await response.json();
+    // 2. Validate PaymentIntent
+    const paymentIntent = result.paymentIntent;
   
-    console.log("✅ Order created:", data);
+    if (!paymentIntent) {
+      console.error("❌ Missing paymentIntent");
+      setStatus("error");
+      setErrorMsg("Payment ID missing. Please contact support.");
+      onAnnounce("Payment ID missing. Please contact support.");
+      return;
+    }
   
-    onAnnounce("Order completed successfully!");
+    console.log("🟡 PaymentIntent status:", paymentIntent.status);
   
-    onPaymentComplete({
-      paymentIntentId: paymentIntent.id,
-      orderData: data,
-    });
+    // 3. Only proceed if succeeded
+    if (paymentIntent.status !== "succeeded") {
+      console.warn("⚠️ Payment not succeeded:", paymentIntent.status);
+      return;
+    }
   
-  } catch (err) {
-    console.error("❌ Order creation failed:", err);
+    // 4. CALL BACKEND (THIS IS THE CRITICAL PART)
+    try {
+      console.log("📦 Sending order to backend...");
   
-    setStatus("error");
-    setErrorMsg("Payment succeeded, but order creation failed.");
-  }
-};
+      const res = await fetch(
+        "https://YOUR-RENDER-URL.onrender.com/create-order-after-payment",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            paymentIntentId: paymentIntent.id,
+            shipping,
+          }),
+        }
+      );
+  
+      const data = await res.json();
+  
+      console.log("✅ Order created:", data);
+  
+      setStatus("success");
+      onAnnounce("Order completed successfully!");
+    } catch (err) {
+      console.error("❌ Order API failed:", err);
+      setStatus("error");
+      setErrorMsg("Payment succeeded, but order creation failed.");
+    }
+  };
 
   const isSubmitting = status === "submitting";
 
