@@ -122,7 +122,7 @@ async function createShippoLabel(shipping) {
       },
       address_to: {
         name: shipping.name,
-        street1: shipping.address,
+        street1: shipping.address1,
         city: shipping.city,
         state: shipping.state || "CA",
         zip: shipping.zip,
@@ -218,7 +218,13 @@ app.post("/create-order-after-payment", async (req, res) => {
       return res.status(400).json({ error: "Missing paymentIntentId" });
     }
 
-    const requiredShippingFields = ["name", "email", "address", "city", "zip"];
+    const requiredShippingFields = [
+      "name",
+      "email",
+      "address1",
+      "city",
+      "zip",
+    ];
     for (const field of requiredShippingFields) {
       if (!shipping?.[field]) {
         console.error(`❌ Missing shipping field: ${field}`);
@@ -267,7 +273,7 @@ app.post("/create-order-after-payment", async (req, res) => {
           <h3>Shipping To</h3>
           <p>
             ${shipping.name}<br/>
-            ${shipping.address}<br/>
+            ${shipping.address1}<br/>
             ${shipping.city}, ${shipping.state || "CA"} ${shipping.zip}
           </p>
 
