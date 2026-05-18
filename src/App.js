@@ -450,7 +450,6 @@ function CheckoutForm({ total, onPaymentComplete, onCancel, highContrast, onAnno
   
     const result = await stripe.confirmPayment({
       elements,
-      confirmParams: { return_url: window.location.origin },
       redirect: "if_required",
     });
 
@@ -484,9 +483,44 @@ function CheckoutForm({ total, onPaymentComplete, onCancel, highContrast, onAnno
     return;
   }
 
-  console.log("✅ [CheckoutForm] Payment SUCCEEDED. Handing off id:", paymentIntent.id);
-  onAnnounce("Payment successful! Loading shipping form.");
-  onPaymentComplete(paymentIntent.id);
+  console.log("✅ [CheckoutForm] Payment SUCCEEDED:", paymentIntent.id);
+
+  try {
+    console.log("📦 Calling backend order route...");
+  
+    const response = await fetch(
+      "https://YOUR-RENDER-BACKEND.onrender.com/create-order-after-payment",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          paymentIntentId: paymentIntent.id,
+          shipping,
+        }),
+      }
+    );
+  
+    console.log("📨 Backend response status:", response.status);
+  
+    const data = await response.json();
+  
+    console.log("✅ Order created:", data);
+  
+    onAnnounce("Order completed successfully!");
+  
+    onPaymentComplete({
+      paymentIntentId: paymentIntent.id,
+      orderData: data,
+    });
+  
+  } catch (err) {
+    console.error("❌ Order creation failed:", err);
+  
+    setStatus("error");
+    setErrorMsg("Payment succeeded, but order creation failed.");
+  }
 };
 
   const isSubmitting = status === "submitting";
