@@ -1,12 +1,27 @@
 import express from "express";
 import cors from "cors";
 import Stripe from "stripe";
-import { Resend } from "resend";
+import nodemailer from "nodemailer";
+
+const transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+await transporter.sendMail({
+  from: process.env.EMAIL_USER,
+  to: "someone@example.com",
+  subject: "Test",
+  text: "Hello!",
+});
 
 
 const app = express();
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+
 
 // ─────────────────────────────────────────────────────
 // STRIPE
@@ -247,34 +262,6 @@ app.post("/create-order-after-payment", async (req, res) => {
 
     // ── Send confirmation email (non-blocking) ───────────────────────────
 console.log("📧 Sending confirmation email to:", shipping.email);
-
-try {
-  await resend.emails.send({
-    from: "SDCB Store <onboarding@resend.dev>",
-    to: shipping.email,
-    subject: "Your Order Confirmation + Tracking Info — SDCB Store",
-    html: `
-      <div style="font-family: Arial, sans-serif;">
-        <h2>Thank you for your order!</h2>
-
-        <h3>Shipping To</h3>
-        <p>
-          ${shipping.name}<br/>
-          ${shipping.address}<br/>
-          ${shipping.city}, ${shipping.state || "CA"} ${shipping.zip}
-        </p>
-
-        <h3>Tracking</h3>
-        <p><strong>Carrier:</strong> ${shippoResult.carrier || "TBD"}</p>
-        <p><strong>Tracking Number:</strong> ${shippoResult.trackingNumber}</p>
-      </div>
-    `,
-  });
-
-  console.log("✅ Email sent to:", shipping.email);
-} catch (emailErr) {
-  console.error("❌ Email failed (non-fatal):", emailErr.message);
-}
 
     return res.json({
       success:        true,
