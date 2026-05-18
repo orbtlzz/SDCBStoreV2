@@ -326,8 +326,23 @@ const PORT = process.env.PORT || 4242;
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`✅ Server running on port ${PORT}`);
-  console.log(`   STRIPE_SECRET_KEY present: ${Boolean(process.env.STRIPE_SECRET_KEY)}`);
-  console.log(`   SHIPPO_API_KEY present:    ${Boolean(process.env.SHIPPO_API_KEY)}`);
-  console.log(`   EMAIL_USER present:        ${Boolean(process.env.EMAIL_USER)}`);
-  console.log(`   EMAIL_PASS present:        ${Boolean(process.env.EMAIL_PASS)}`);
+
+  const required = [
+    "STRIPE_SECRET_KEY",
+    "SHIPPO_API_KEY",
+    "EMAIL_USER",
+    "EMAIL_PASS",
+  ];
+  let missing = false;
+  for (const key of required) {
+    if (process.env[key]) {
+      console.log(`   ✅ ${key} is set`);
+    } else {
+      console.error(`   ❌ MISSING: ${key}`);
+      missing = true;
+    }
+  }
+  if (missing) {
+    console.error("⚠️  One or more env vars are missing. Routes that need them will fail.");
+  }
 });
