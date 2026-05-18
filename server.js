@@ -169,6 +169,15 @@ async function createShippoLabel(shipping) {
     );
   }
 
+  // ✅ SAFETY NET (ADD HERE)
+  console.log("📦 FINAL SHIPPO RESULT:", {
+    trackingNumber: txData.tracking_number,
+    trackingUrl: txData.tracking_url_provider,
+    labelUrl: txData.label_url,
+    carrier: txData.tracking_carrier,
+    status: txData.status,
+  });
+
   return {
     trackingNumber: txData.tracking_number || "Processing",
     trackingUrl:    txData.tracking_url_provider || "",
