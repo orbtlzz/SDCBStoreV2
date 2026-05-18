@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import Stripe from "stripe";
+import fetch from "node-fetch";
 import nodemailer from "nodemailer";
 
 const app = express();
@@ -45,15 +46,6 @@ const transporter = nodemailer.createTransport({
   tls: {
     rejectUnauthorized: false,
   },
-});
-
-// Verify config at startup. Non-blocking — no top-level await, no test send.
-transporter.verify((err) => {
-  if (err) {
-    console.error("❌ Nodemailer config error:", err.message);
-  } else {
-    console.log("✅ Nodemailer ready");
-  }
 });
 
 // ─────────────────────────────────────────────────────
