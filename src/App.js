@@ -443,37 +443,52 @@ function CheckoutForm({ total, onPaymentComplete, onCancel, highContrast, onAnno
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!stripe || !elements) return;
-
+  
+    console.log("🟡 [CheckoutForm] Submitting to Stripe...");
     setStatus("submitting");
     setErrorMsg("");
     onAnnounce("Processing your payment. Please wait.");
-
-    // FIX: keep the full result so we can read result.paymentIntent
+  
     const result = await stripe.confirmPayment({
       elements,
       confirmParams: { return_url: window.location.origin },
       redirect: "if_required",
     });
 
-    if (result.error) {
-      setStatus("error");
-      setErrorMsg(result.error.message ?? "An unexpected error occurred.");
-      onAnnounce(`Payment failed: ${result.error.message}`);
-      return;
-    }
+  console.log("🟡 [CheckoutForm] confirmPayment result:", result);
 
-    const paymentIntentId = result.paymentIntent?.id;
-    if (!paymentIntentId) {
-      setStatus("error");
-      setErrorMsg("Payment ID missing. Please contact support.");
-      onAnnounce("Payment ID missing. Please contact support.");
-      return;
-    }
+  if (result.error) {
+    console.error("❌ [CheckoutForm] Stripe error:", result.error);
+    setStatus("error");
+    setErrorMsg(result.error.message ?? "An unexpected error occurred.");
+    onAnnounce(`Payment failed: ${result.error.message}`);
+    return;
+  }
 
-    onAnnounce("Payment successful! Loading shipping form.");
-    // Hand off to parent — parent closes this modal and opens ShippingModal
-    onPaymentComplete(paymentIntentId);
-  };
+  const paymentIntent = result.paymentIntent;
+  console.log("🟡 [CheckoutForm] paymentIntent:", paymentIntent);
+
+  if (!paymentIntent) {
+    console.error("❌ [CheckoutForm] No paymentIntent in result");
+    setStatus("error");
+    setErrorMsg("Payment ID missing. Please contact support.");
+    onAnnounce("Payment ID missing. Please contact support.");
+    return;
+  }
+
+  // EXPLICIT status check — only proceed if Stripe confirms success
+  if (paymentIntent.status !== "succeeded") {
+    console.warn("⚠️ [CheckoutForm] Status not succeeded:", paymentIntent.status);
+    setStatus("error");
+    setErrorMsg(`Payment status is "${paymentIntent.status}". Please try again.`);
+    onAnnounce(`Payment status: ${paymentIntent.status}`);
+    return;
+  }
+
+  console.log("✅ [CheckoutForm] Payment SUCCEEDED. Handing off id:", paymentIntent.id);
+  onAnnounce("Payment successful! Loading shipping form.");
+  onPaymentComplete(paymentIntent.id);
+};
 
   const isSubmitting = status === "submitting";
 
@@ -728,57 +743,78 @@ function ShippingModal({ open, paymentIntentId, onSuccess, onAnnounce, highContr
     setShipping((s) => ({ ...s, [field]: e.target.value }));
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    const required = [
-      { key: "name",    label: "full name" },
-      { key: "email",   label: "email address" },
-      { key: "address", label: "street address" },
-      { key: "city",    label: "city" },
-      { key: "zip",     label: "ZIP code" },
-    ];
-    for (const { key, label } of required) {
-      if (!shipping[key].trim()) {
-        setStatus("error");
-        setErrorMsg(`Please enter your ${label}.`);
-        onAnnounce(`Error: Please enter your ${label}.`);
-        return;
-      }
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(shipping.email)) {
+  console.log("🟡 [ShippingModal] submit clicked");
+  console.log("🟡 [ShippingModal] paymentIntentId =", paymentIntentId);
+  console.log("🟡 [ShippingModal] shipping =", shipping);
+
+  const required = [
+    { key: "name",    label: "full name" },
+    { key: "email",   label: "email address" },
+    { key: "address", label: "street address" },
+    { key: "city",    label: "city" },
+    { key: "zip",     label: "ZIP code" },
+  ];
+  for (const { key, label } of required) {
+    if (!shipping[key].trim()) {
+      console.warn(`⚠️ [ShippingModal] missing field: ${key}`);
       setStatus("error");
-      setErrorMsg("Please enter a valid email address.");
-      onAnnounce("Error: Please enter a valid email address.");
+      setErrorMsg(`Please enter your ${label}.`);
+      onAnnounce(`Error: Please enter your ${label}.`);
       return;
     }
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(shipping.email)) {
+    setStatus("error");
+    setErrorMsg("Please enter a valid email address.");
+    onAnnounce("Error: Please enter a valid email address.");
+    return;
+  }
 
-    setStatus("submitting");
-    setErrorMsg("");
-    onAnnounce("Submitting your shipping information. Please wait.");
+  // Guard: paymentIntentId must exist
+  if (!paymentIntentId) {
+    console.error("❌ [ShippingModal] paymentIntentId is missing — cannot create order");
+    setStatus("error");
+    setErrorMsg("Payment session lost. Please refresh and try again.");
+    onAnnounce("Payment session lost. Please refresh and try again.");
+    return;
+  }
 
-    try {
-      const res = await fetch(
-        `${process.env.REACT_APP_SERVER_URL}/create-order-after-payment`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ shipping, paymentIntentId }),
-        }
-      );
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || "Order submission failed. Please contact support.");
-      }
+  setStatus("submitting");
+  setErrorMsg("");
+  onAnnounce("Submitting your shipping information. Please wait.");
 
-      setStatus("success");
-      onAnnounce(`Order confirmed! A confirmation email with tracking has been sent to ${shipping.email}.`);
-      setTimeout(onSuccess, 700);
-    } catch (err) {
-      setStatus("error");
-      setErrorMsg(err.message);
-      onAnnounce(`Error: ${err.message}`);
+  const url = `${process.env.REACT_APP_SERVER_URL}/create-order-after-payment`;
+  console.log("🟡 [ShippingModal] POSTing to:", url);
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ shipping, paymentIntentId }),
+    });
+
+    console.log("🟡 [ShippingModal] response status:", res.status, res.statusText);
+
+    const data = await res.json();
+    console.log("🟡 [ShippingModal] response body:", data);
+
+    if (!res.ok || data.error) {
+      throw new Error(data.error || `Server responded ${res.status}`);
     }
-  };
+
+    console.log("✅ [ShippingModal] order created. tracking:", data.trackingNumber);
+    setStatus("success");
+    onAnnounce(`Order confirmed! A confirmation email has been sent to ${shipping.email}.`);
+    setTimeout(onSuccess, 700);
+  } catch (err) {
+    console.error("❌ [ShippingModal] fetch failed:", err);
+    setStatus("error");
+    setErrorMsg(err.message);
+    onAnnounce(`Error: ${err.message}`);
+  }
+};
 
   if (!open) return null;
 
@@ -1224,6 +1260,7 @@ export default function App() {
 
   // ── Step 2: Stripe confirmed → store id, open ShippingModal ────────────
   const handlePaymentComplete = useCallback((id) => {
+    console.log("🟢 [App] handlePaymentComplete received id:", id);
     setPaymentIntentId(id);
     setCheckoutOpen(false);
     setClientSecret(null);
