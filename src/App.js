@@ -13,9 +13,7 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // STRIPE INIT  ← replace with your real publishable key
 // ─────────────────────────────────────────────────────────────────────────────
-const stripePromise = loadStripe(
-  process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY
-);
+const stripePromise = loadStripe("YOUR_PUBLISHABLE_KEY_HERE");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SDCB Brand Colors
@@ -344,7 +342,6 @@ function ProductCard({ product, onAddToCart, onAnnounce, highContrast }) {
         {product.category}
       </span>
 
-      {/* p instead of h2 — article aria-label already carries the full context */}
       <p
         aria-hidden="true"
         style={{
@@ -428,121 +425,55 @@ function ProductCard({ product, onAddToCart, onAnnounce, highContrast }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CHECKOUT FORM  (must live inside <Elements>)
-// Uses useStripe + useElements — only works as a child of <Elements>.
+// FIX: capture result.paymentIntent.id and hand it to parent via
+// onPaymentComplete(id). Parent opens the ShippingModal next.
 // ─────────────────────────────────────────────────────────────────────────────
-function CheckoutForm({ total, onSuccess, onCancel, highContrast, onAnnounce }) {
+function CheckoutForm({ total, onPaymentComplete, onCancel, highContrast, onAnnounce }) {
   const stripe    = useStripe();
   const elements  = useElements();
   const errorRef  = useRef(null);
 
-  // "idle" | "submitting" | "success" | "error"
-  const [status,   setStatus]   = useState("idle");
+  const [status,   setStatus]   = useState("idle"); // idle | submitting | error
   const [errorMsg, setErrorMsg] = useState("");
 
-  // Move focus to error message when it appears
   useEffect(() => {
-    if (status === "error" && errorRef.current) {
-      errorRef.current.focus();
-    }
+    if (status === "error" && errorRef.current) errorRef.current.focus();
   }, [status]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-
-    // stripe/elements not yet loaded — shouldn't happen but guard anyway
     if (!stripe || !elements) return;
 
     setStatus("submitting");
     setErrorMsg("");
     onAnnounce("Processing your payment. Please wait.");
 
-    // confirmPayment with redirect: "if_required" means:
-    //   • card payments resolve here with a result object (no redirect)
-    //   • redirect-based methods (bank, iDEAL, etc.) still redirect to return_url
-   const result = await stripe.confirmPayment({
+    // FIX: keep the full result so we can read result.paymentIntent
+    const result = await stripe.confirmPayment({
       elements,
+      confirmParams: { return_url: window.location.origin },
       redirect: "if_required",
     });
-    
+
     if (result.error) {
       setStatus("error");
       setErrorMsg(result.error.message ?? "An unexpected error occurred.");
       onAnnounce(`Payment failed: ${result.error.message}`);
       return;
     }
-    
-    const paymentIntent = result.paymentIntent;
-    
-    if (!paymentIntent) return;
 
-    const handleSubmit = async (e) => {
-  e.preventDefault();
+    const paymentIntentId = result.paymentIntent?.id;
+    if (!paymentIntentId) {
+      setStatus("error");
+      setErrorMsg("Payment ID missing. Please contact support.");
+      onAnnounce("Payment ID missing. Please contact support.");
+      return;
+    }
 
-  if (!stripe || !elements) return;
-
-  setStatus("submitting");
-  setErrorMsg("");
-  onAnnounce("Processing your payment. Please wait.");
-
-  const result = await stripe.confirmPayment({
-    elements,
-    redirect: "if_required",
-  });
-
-  if (result.error) {
-    setStatus("error");
-    setErrorMsg(result.error.message ?? "An unexpected error occurred.");
-    onAnnounce(`Payment failed: ${result.error.message}`);
-    return;
-  }
-
-  const paymentIntent = result.paymentIntent;
-
-  if (!paymentIntent) {
-    setStatus("error");
-    setErrorMsg("Missing payment intent.");
-    return;
-  }
-
-  if (paymentIntent.status !== "succeeded") {
-    setStatus("error");
-    setErrorMsg(`Payment status: ${paymentIntent.status}`);
-    return;
-  }
-
-  setStatus("success");
-  onAnnounce("Payment successful! Thank you for your order.");
-
-  setTimeout(() => {
-    onSuccess(paymentIntent.id);
-  }, 400);
-};
-  
-  if (status === "success") {
-    return (
-      <div
-        role="status"
-        aria-live="polite"
-        style={{ textAlign: "center", padding: "2rem 1rem" }}
-      >
-        <p style={{ fontSize: "3rem", margin: "0 0 0.5rem" }}>🎉</p>
-        <p
-          style={{
-            fontFamily: "'Playfair Display', Georgia, serif",
-            fontSize: "1.4rem",
-            fontWeight: 700,
-            color: highContrast ? SDCB.hcYellow : SDCB.navy,
-            margin: "0 0 0.5rem",
-          }}
-        >
-          Payment successful!
-        </p>
-        <p style={{ color: highContrast ? SDCB.hcText : SDCB.gray, margin: 0 }}>
-          Thank you for shopping with the San Diego Center for the Blind.
-        </p>
-      </div>
-    );
-  }
+    onAnnounce("Payment successful! Loading shipping form.");
+    // Hand off to parent — parent closes this modal and opens ShippingModal
+    onPaymentComplete(paymentIntentId);
+  };
 
   const isSubmitting = status === "submitting";
 
@@ -553,7 +484,6 @@ function CheckoutForm({ total, onSuccess, onCancel, highContrast, onAnnounce }) 
       aria-label="Payment form"
       style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}
     >
-      {/* Order summary */}
       <div
         style={{
           background: highContrast ? "#111" : SDCB.skyLight,
@@ -569,27 +499,13 @@ function CheckoutForm({ total, onSuccess, onCancel, highContrast, onAnnounce }) 
         <span style={{ color: highContrast ? SDCB.hcText : SDCB.gray, fontSize: "0.9rem" }}>
           Order total
         </span>
-        <span
-          style={{
-            fontWeight: 700,
-            fontSize: "1.1rem",
-            color: highContrast ? SDCB.hcYellow : SDCB.navy,
-          }}
-        >
+        <span style={{ fontWeight: 700, fontSize: "1.1rem", color: highContrast ? SDCB.hcYellow : SDCB.navy }}>
           ${total.toFixed(2)}
         </span>
       </div>
 
-      {/* Stripe's PaymentElement renders card, Apple Pay, Google Pay, etc.
-          It is internally accessible — Stripe injects its own labeled iframes. */}
-      <PaymentElement
-        id="payment-element"
-        options={{
-          layout: "tabs",
-        }}
-      />
+      <PaymentElement id="payment-element" options={{ layout: "tabs" }} />
 
-      {/* Inline error — role="alert" interrupts screen readers immediately */}
       {status === "error" && (
         <div
           ref={errorRef}
@@ -610,16 +526,11 @@ function CheckoutForm({ total, onSuccess, onCancel, highContrast, onAnnounce }) 
         </div>
       )}
 
-      {/* Action buttons */}
       <button
         type="submit"
         disabled={!stripe || !elements || isSubmitting}
         aria-disabled={!stripe || !elements || isSubmitting}
-        aria-label={
-          isSubmitting
-            ? "Processing payment, please wait"
-            : `Pay $${total.toFixed(2)}`
-        }
+        aria-label={isSubmitting ? "Processing payment, please wait" : `Pay $${total.toFixed(2)}`}
         style={{
           ...btnStyle(highContrast, "primary"),
           opacity: (!stripe || !elements || isSubmitting) ? 0.65 : 1,
@@ -644,56 +555,38 @@ function CheckoutForm({ total, onSuccess, onCancel, highContrast, onAnnounce }) 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CHECKOUT MODAL
-// Wraps <Elements> (requires clientSecret) around <CheckoutForm>.
-// Rendered as an accessible dialog over the rest of the page.
 // ─────────────────────────────────────────────────────────────────────────────
 function CheckoutModal({
   clientSecret,
   cart,
   open,
   onClose,
-  onSuccess,
+  onPaymentComplete,
   highContrast,
   onAnnounce,
 }) {
   const dialogRef  = useRef(null);
   const total      = cart.reduce((s, i) => s + i.price * i.qty, 0);
 
-  // Focus the dialog when it opens
   useEffect(() => {
-    if (open && dialogRef.current) {
-      dialogRef.current.focus();
-    }
+    if (open && dialogRef.current) dialogRef.current.focus();
   }, [open]);
 
-  // Trap focus inside the modal while it is open
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (e) => {
-      if (e.key === "Escape") {
-        onClose();
-        return;
-      }
+      if (e.key === "Escape") { onClose(); return; }
       if (e.key !== "Tab") return;
-
       const focusable = dialogRef.current?.querySelectorAll(
         'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"]), iframe'
       );
       if (!focusable || focusable.length === 0) return;
-
       const first = focusable[0];
       const last  = focusable[focusable.length - 1];
-
       if (e.shiftKey) {
-        if (document.activeElement === first) {
-          e.preventDefault();
-          last.focus();
-        }
+        if (document.activeElement === first) { e.preventDefault(); last.focus(); }
       } else {
-        if (document.activeElement === last) {
-          e.preventDefault();
-          first.focus();
-        }
+        if (document.activeElement === last) { e.preventDefault(); first.focus(); }
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -702,42 +595,28 @@ function CheckoutModal({
 
   if (!open || !clientSecret) return null;
 
-  // Stripe Elements appearance — respects high contrast mode
   const appearance = {
     theme: highContrast ? "night" : "stripe",
     variables: {
-      colorPrimary:       SDCB.blue,
-      colorBackground:    highContrast ? "#111" : SDCB.white,
-      colorText:          highContrast ? SDCB.hcYellow : SDCB.navy,
-      colorDanger:        "#E53E3E",
-      fontFamily:         "'Source Serif 4', Georgia, serif",
-      borderRadius:       "8px",
-      spacingUnit:        "4px",
+      colorPrimary:    SDCB.blue,
+      colorBackground: highContrast ? "#111" : SDCB.white,
+      colorText:       highContrast ? SDCB.hcYellow : SDCB.navy,
+      colorDanger:     "#E53E3E",
+      fontFamily:      "'Source Serif 4', Georgia, serif",
+      borderRadius:    "8px",
+      spacingUnit:     "4px",
     },
   };
 
-  const elementsOptions = {
-    clientSecret,
-    appearance,
-    // Tells Elements which payment methods to show based on the PaymentIntent
-    loader: "auto",
-  };
+  const elementsOptions = { clientSecret, appearance, loader: "auto" };
 
   return (
     <>
-      {/* Backdrop */}
       <div
         aria-hidden="true"
         onClick={onClose}
-        style={{
-          position: "fixed",
-          inset: 0,
-          background: "rgba(0,0,0,0.55)",
-          zIndex: 1500,
-        }}
+        style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1500 }}
       />
-
-      {/* Dialog */}
       <div
         ref={dialogRef}
         role="dialog"
@@ -746,8 +625,7 @@ function CheckoutModal({
         tabIndex={-1}
         style={{
           position: "fixed",
-          top: "50%",
-          left: "50%",
+          top: "50%", left: "50%",
           transform: "translate(-50%, -50%)",
           zIndex: 1600,
           width: 480,
@@ -755,69 +633,38 @@ function CheckoutModal({
           maxHeight: "90vh",
           overflowY: "auto",
           background: highContrast ? SDCB.hcBg : SDCB.white,
-          border: highContrast
-            ? `2px solid ${SDCB.hcYellow}`
-            : `1.5px solid ${SDCB.lightGray}`,
+          border: highContrast ? `2px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`,
           borderRadius: 16,
           padding: "2rem",
           boxShadow: "0 20px 60px rgba(13,61,110,0.25)",
           outline: "none",
         }}
       >
-        {/* Modal header */}
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "1.5rem",
-          }}
-        >
-          <p
-            style={{
-              margin: 0,
-              fontFamily: "'Playfair Display', Georgia, serif",
-              fontSize: "1.3rem",
-              fontWeight: 700,
-              color: highContrast ? SDCB.hcYellow : SDCB.navy,
-            }}
-          >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.5rem" }}>
+          <p style={{ margin: 0, fontFamily: "'Playfair Display', Georgia, serif", fontSize: "1.3rem", fontWeight: 700, color: highContrast ? SDCB.hcYellow : SDCB.navy }}>
             Secure Checkout
           </p>
           <button
             onClick={onClose}
             aria-label="Close payment form"
-            style={{
-              ...btnStyle(highContrast, "secondary"),
-              padding: "0.3rem 0.7rem",
-              fontSize: "1rem",
-            }}
+            style={{ ...btnStyle(highContrast, "secondary"), padding: "0.3rem 0.7rem", fontSize: "1rem" }}
           >
             ✕
           </button>
         </div>
 
-        {/* Stripe lock badge */}
         <p
           aria-label="This payment is secured by Stripe"
-          style={{
-            margin: "0 0 1.25rem",
-            fontSize: "0.78rem",
-            color: highContrast ? "#aaa" : SDCB.gray,
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-          }}
+          style={{ margin: "0 0 1.25rem", fontSize: "0.78rem", color: highContrast ? "#aaa" : SDCB.gray, display: "flex", alignItems: "center", gap: 6 }}
         >
           <span aria-hidden="true">🔒</span>
           Secured by Stripe. Your payment info is never stored on our servers.
         </p>
 
-        {/* Elements + form */}
         <Elements stripe={stripePromise} options={elementsOptions}>
           <CheckoutForm
             total={total}
-            onSuccess={onSuccess}
+            onPaymentComplete={onPaymentComplete}
             onCancel={onClose}
             highContrast={highContrast}
             onAnnounce={onAnnounce}
@@ -829,20 +676,352 @@ function CheckoutModal({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SHIPPING MODAL  (NEW)
+// Opens AFTER payment succeeds. Collects shipping, POSTs to backend, then
+// triggers final success cleanup.
+// ─────────────────────────────────────────────────────────────────────────────
+function ShippingModal({ open, paymentIntentId, onSuccess, onAnnounce, highContrast }) {
+  const dialogRef = useRef(null);
+  const firstRef  = useRef(null);
+  const errorRef  = useRef(null);
+
+  const [shipping, setShipping] = useState({
+    name: "", email: "", address: "", city: "", state: "", zip: "",
+  });
+  const [status,   setStatus]   = useState("idle"); // idle | submitting | success | error
+  const [errorMsg, setErrorMsg] = useState("");
+
+  // Reset form + focus first field on open
+  useEffect(() => {
+    if (open) {
+      setShipping({ name: "", email: "", address: "", city: "", state: "", zip: "" });
+      setStatus("idle");
+      setErrorMsg("");
+      setTimeout(() => firstRef.current?.focus(), 50);
+    }
+  }, [open]);
+
+  // Move focus to error when it appears
+  useEffect(() => {
+    if (status === "error" && errorRef.current) errorRef.current.focus();
+  }, [status]);
+
+  // Focus trap
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (e) => {
+      if (e.key !== "Tab") return;
+      const focusable = dialogRef.current?.querySelectorAll(
+        'button, input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (!focusable || focusable.length === 0) return;
+      const first = focusable[0];
+      const last  = focusable[focusable.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
+
+  const handleChange = (field) => (e) =>
+    setShipping((s) => ({ ...s, [field]: e.target.value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    const required = [
+      { key: "name",    label: "full name" },
+      { key: "email",   label: "email address" },
+      { key: "address", label: "street address" },
+      { key: "city",    label: "city" },
+      { key: "zip",     label: "ZIP code" },
+    ];
+    for (const { key, label } of required) {
+      if (!shipping[key].trim()) {
+        setStatus("error");
+        setErrorMsg(`Please enter your ${label}.`);
+        onAnnounce(`Error: Please enter your ${label}.`);
+        return;
+      }
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(shipping.email)) {
+      setStatus("error");
+      setErrorMsg("Please enter a valid email address.");
+      onAnnounce("Error: Please enter a valid email address.");
+      return;
+    }
+
+    setStatus("submitting");
+    setErrorMsg("");
+    onAnnounce("Submitting your shipping information. Please wait.");
+
+    try {
+      const res = await fetch(
+        `${process.env.REACT_APP_SERVER_URL}/create-order-after-payment`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ shipping, paymentIntentId }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || "Order submission failed. Please contact support.");
+      }
+
+      setStatus("success");
+      onAnnounce(`Order confirmed! A confirmation email with tracking has been sent to ${shipping.email}.`);
+      setTimeout(onSuccess, 700);
+    } catch (err) {
+      setStatus("error");
+      setErrorMsg(err.message);
+      onAnnounce(`Error: ${err.message}`);
+    }
+  };
+
+  if (!open) return null;
+
+  const isSubmitting = status === "submitting";
+
+  const inputStyle = {
+    width: "100%",
+    padding: "0.6rem 0.9rem",
+    border: highContrast ? `2px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`,
+    borderRadius: 8,
+    fontSize: "1rem",
+    background: highContrast ? "#111" : SDCB.white,
+    color: highContrast ? SDCB.hcYellow : SDCB.navy,
+    fontFamily: "inherit",
+    boxSizing: "border-box",
+  };
+  const labelStyle = {
+    display: "block",
+    marginBottom: 4,
+    fontWeight: 600,
+    fontSize: "0.85rem",
+    color: highContrast ? SDCB.hcYellow : SDCB.navy,
+  };
+  const dialogStyle = {
+    position: "fixed",
+    top: "50%", left: "50%",
+    transform: "translate(-50%, -50%)",
+    zIndex: 1600,
+    width: 500,
+    maxWidth: "95vw",
+    maxHeight: "90vh",
+    overflowY: "auto",
+    background: highContrast ? SDCB.hcBg : SDCB.white,
+    border: highContrast ? `2px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`,
+    borderRadius: 16,
+    padding: "2rem",
+    boxShadow: "0 20px 60px rgba(13,61,110,0.25)",
+    outline: "none",
+  };
+
+  if (status === "success") {
+    return (
+      <>
+        <div aria-hidden="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1500 }} />
+        <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Order confirmed" tabIndex={-1} style={dialogStyle}>
+          <div role="status" aria-live="polite" style={{ textAlign: "center", padding: "1.5rem 0" }}>
+            <p style={{ fontSize: "3rem", margin: "0 0 0.75rem" }}>🎉</p>
+            <p style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: "1.4rem", fontWeight: 700, color: highContrast ? SDCB.hcYellow : SDCB.navy, margin: "0 0 0.5rem" }}>
+              Order Placed!
+            </p>
+            <p style={{ color: highContrast ? SDCB.hcText : SDCB.gray, margin: "0 0 0.25rem", fontSize: "0.95rem" }}>
+              A confirmation email with tracking info has been sent to
+            </p>
+            <p style={{ color: highContrast ? SDCB.hcYellow : SDCB.blue, fontWeight: 700, margin: 0 }}>
+              {shipping.email}
+            </p>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      <div aria-hidden="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1500 }} />
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="shipping-modal-title"
+        tabIndex={-1}
+        style={dialogStyle}
+      >
+        <p
+          id="shipping-modal-title"
+          style={{ margin: 0, fontFamily: "'Playfair Display', Georgia, serif", fontSize: "1.3rem", fontWeight: 700, color: highContrast ? SDCB.hcYellow : SDCB.navy }}
+        >
+          Shipping Information
+        </p>
+
+        <p style={{ margin: "0.4rem 0 1.25rem", fontSize: "0.85rem", color: highContrast ? "#aaa" : SDCB.gray }}>
+          Your payment was successful. Enter your shipping details and we'll get your order on its way.
+        </p>
+
+        {status === "error" && (
+          <div
+            ref={errorRef}
+            role="alert"
+            tabIndex={-1}
+            aria-live="assertive"
+            style={{
+              background: highContrast ? "#300" : "#FFF0F0",
+              border: `1.5px solid ${highContrast ? "#f88" : "#E53E3E"}`,
+              borderRadius: 8,
+              padding: "0.7rem 1rem",
+              color: highContrast ? "#faa" : "#C53030",
+              fontSize: "0.9rem",
+              marginBottom: "1rem",
+              outline: "none",
+            }}
+          >
+            <strong>Error:</strong> {errorMsg}
+          </div>
+        )}
+
+        <form
+          onSubmit={handleSubmit}
+          noValidate
+          aria-label="Shipping information form"
+          style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}
+        >
+          <div>
+            <label htmlFor="ship-name" style={labelStyle}>
+              Full Name <span aria-hidden="true" style={{ color: highContrast ? "#f88" : "#C53030" }}>*</span>
+            </label>
+            <input
+              ref={firstRef}
+              id="ship-name"
+              type="text"
+              autoComplete="name"
+              required
+              aria-required="true"
+              value={shipping.name}
+              onChange={handleChange("name")}
+              disabled={isSubmitting}
+              style={inputStyle}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="ship-email" style={labelStyle}>
+              Email Address <span aria-hidden="true" style={{ color: highContrast ? "#f88" : "#C53030" }}>*</span>
+            </label>
+            <input
+              id="ship-email"
+              type="email"
+              autoComplete="email"
+              required
+              aria-required="true"
+              value={shipping.email}
+              onChange={handleChange("email")}
+              disabled={isSubmitting}
+              style={inputStyle}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="ship-address" style={labelStyle}>
+              Street Address <span aria-hidden="true" style={{ color: highContrast ? "#f88" : "#C53030" }}>*</span>
+            </label>
+            <input
+              id="ship-address"
+              type="text"
+              autoComplete="street-address"
+              required
+              aria-required="true"
+              value={shipping.address}
+              onChange={handleChange("address")}
+              disabled={isSubmitting}
+              style={inputStyle}
+            />
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: "0.6rem" }}>
+            <div>
+              <label htmlFor="ship-city" style={labelStyle}>
+                City <span aria-hidden="true" style={{ color: highContrast ? "#f88" : "#C53030" }}>*</span>
+              </label>
+              <input
+                id="ship-city"
+                type="text"
+                autoComplete="address-level2"
+                required
+                aria-required="true"
+                value={shipping.city}
+                onChange={handleChange("city")}
+                disabled={isSubmitting}
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label htmlFor="ship-state" style={labelStyle}>State</label>
+              <input
+                id="ship-state"
+                type="text"
+                autoComplete="address-level1"
+                placeholder="CA"
+                maxLength={2}
+                aria-label="State (2-letter abbreviation, optional)"
+                value={shipping.state}
+                onChange={handleChange("state")}
+                disabled={isSubmitting}
+                style={inputStyle}
+              />
+            </div>
+            <div>
+              <label htmlFor="ship-zip" style={labelStyle}>
+                ZIP <span aria-hidden="true" style={{ color: highContrast ? "#f88" : "#C53030" }}>*</span>
+              </label>
+              <input
+                id="ship-zip"
+                type="text"
+                autoComplete="postal-code"
+                inputMode="numeric"
+                required
+                aria-required="true"
+                value={shipping.zip}
+                onChange={handleChange("zip")}
+                disabled={isSubmitting}
+                style={inputStyle}
+              />
+            </div>
+          </div>
+
+          <p style={{ margin: 0, fontSize: "0.75rem", color: highContrast ? "#aaa" : SDCB.gray }}>
+            <span aria-hidden="true" style={{ color: highContrast ? "#f88" : "#C53030" }}>*</span>{" "}
+            Required fields
+          </p>
+
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            aria-disabled={isSubmitting}
+            aria-label={isSubmitting ? "Placing your order, please wait" : "Submit shipping information and place order"}
+            style={{
+              ...btnStyle(highContrast, "primary"),
+              marginTop: 4,
+              opacity: isSubmitting ? 0.65 : 1,
+              cursor: isSubmitting ? "not-allowed" : "pointer",
+            }}
+          >
+            {isSubmitting ? "⏳ Placing order…" : "Place Order"}
+          </button>
+        </form>
+      </div>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CART DRAWER
 // ─────────────────────────────────────────────────────────────────────────────
-function CartDrawer({
-  cart,
-  open,
-  onClose,
-  onCheckout,
-  checkoutLoading,
-  checkoutError,
-  highContrast,
-  onAnnounce,
-  shipping,
-  setShipping,
-}) {
+function CartDrawer({ cart, open, onClose, onCheckout, checkoutLoading, checkoutError, highContrast, onAnnounce }) {
   const closeRef = useRef(null);
 
   useEffect(() => {
@@ -864,9 +1043,7 @@ function CartDrawer({
         maxWidth: "92vw",
         height: "100%",
         background: highContrast ? SDCB.hcBg : SDCB.white,
-        borderLeft: highContrast
-          ? `2px solid ${SDCB.hcYellow}`
-          : `2px solid ${SDCB.lightGray}`,
+        borderLeft: highContrast ? `2px solid ${SDCB.hcYellow}` : `2px solid ${SDCB.lightGray}`,
         zIndex: 1000,
         transition: "right 0.3s ease",
         display: "flex",
@@ -878,15 +1055,7 @@ function CartDrawer({
       }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <p
-          style={{
-            margin: 0,
-            fontFamily: "'Playfair Display', Georgia, serif",
-            color: highContrast ? SDCB.hcYellow : SDCB.navy,
-            fontSize: "1.4rem",
-            fontWeight: 700,
-          }}
-        >
+        <p style={{ margin: 0, fontFamily: "'Playfair Display', Georgia, serif", color: highContrast ? SDCB.hcYellow : SDCB.navy, fontSize: "1.4rem", fontWeight: 700 }}>
           Your Cart
         </p>
         <button
@@ -913,16 +1082,12 @@ function CartDrawer({
                 justifyContent: "space-between",
                 alignItems: "center",
                 padding: "0.7rem 0",
-                borderBottom: highContrast
-                  ? `1px solid ${SDCB.hcYellow}`
-                  : `1px solid ${SDCB.lightGray}`,
+                borderBottom: highContrast ? `1px solid ${SDCB.hcYellow}` : `1px solid ${SDCB.lightGray}`,
               }}
             >
               <span style={{ color: highContrast ? SDCB.hcText : SDCB.navy, fontSize: "0.9rem", flex: 1 }}>
                 {item.emoji} {item.name}{" "}
-                <span style={{ color: highContrast ? SDCB.hcYellow : SDCB.skyMid }}>
-                  ×{item.qty}
-                </span>
+                <span style={{ color: highContrast ? SDCB.hcYellow : SDCB.skyMid }}>×{item.qty}</span>
               </span>
               <span style={{ fontWeight: 700, color: highContrast ? SDCB.hcYellow : SDCB.blue, marginLeft: 12 }}>
                 ${(item.price * item.qty).toFixed(2)}
@@ -931,21 +1096,13 @@ function CartDrawer({
           ))}
 
           <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontWeight: 700,
-              fontSize: "1.1rem",
-              color: highContrast ? SDCB.hcYellow : SDCB.navy,
-              paddingTop: "0.5rem",
-            }}
+            style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: "1.1rem", color: highContrast ? SDCB.hcYellow : SDCB.navy, paddingTop: "0.5rem" }}
             aria-label={`Total: $${total.toFixed(2)}`}
           >
             <span>Total</span>
             <span>${total.toFixed(2)}</span>
           </div>
 
-          {/* Checkout error — shown inside drawer if PaymentIntent creation fails */}
           {checkoutError && (
             <div
               role="alert"
@@ -963,99 +1120,6 @@ function CartDrawer({
             </div>
           )}
 
-            <div
-              style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-              marginTop: 12,
-            }}
-          >
-            <input
-              type="text"
-              placeholder="Full Name"
-              value={shipping.name}
-              onChange={(e) =>
-                setShipping({ ...shipping, name: e.target.value })
-              }
-              style={{
-                padding: "0.65rem",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-              }}
-            />
-
-            <input
-              type="email"
-              placeholder="Email Address"
-              value={shipping.email}
-              onChange={(e) =>
-                setShipping({ ...shipping, email: e.target.value })
-              }
-              style={{
-                padding: "0.65rem",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-              }}
-            />
-
-            <input
-              type="text"
-              placeholder="Street Address"
-              value={shipping.address1}
-              onChange={(e) =>
-                setShipping({ ...shipping, address1: e.target.value })
-              }
-              style={{
-                padding: "0.65rem",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-              }}
-            />
-
-            <input
-              type="text"
-              placeholder="City"
-              value={shipping.city}
-              onChange={(e) =>
-                setShipping({ ...shipping, city: e.target.value })
-              }
-              style={{
-                padding: "0.65rem",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-              }}
-            />
-
-            <input
-              type="text"
-              placeholder="State"
-              value={shipping.state}
-              onChange={(e) =>
-                setShipping({ ...shipping, state: e.target.value })
-              }
-              style={{
-                padding: "0.65rem",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-              }}
-            />
-  
-            <input
-              type="text"
-              placeholder="ZIP Code"
-              value={shipping.zip}
-              onChange={(e) =>
-                setShipping({ ...shipping, zip: e.target.value })
-              }
-              style={{
-                padding: "0.65rem",
-                borderRadius: 8,
-                border: "1px solid #ccc",
-              }}
-            />
-          </div>
-
           <button
             style={{
               ...btnStyle(highContrast, "primary"),
@@ -1066,11 +1130,7 @@ function CartDrawer({
             onClick={onCheckout}
             disabled={checkoutLoading}
             aria-disabled={checkoutLoading}
-            aria-label={
-              checkoutLoading
-                ? "Loading payment form, please wait"
-                : `Proceed to checkout. Total: $${total.toFixed(2)}`
-            }
+            aria-label={checkoutLoading ? "Loading payment form, please wait" : `Proceed to checkout. Total: $${total.toFixed(2)}`}
           >
             {checkoutLoading ? "⏳ Loading payment…" : `Checkout — $${total.toFixed(2)}`}
           </button>
@@ -1084,39 +1144,33 @@ function CartDrawer({
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [cart,            setCart]           = useState([]);
-  const [shipping, setShipping] = useState({
-      name: "",
-      email: "",
-      address1: "",
-      city: "",
-      state: "",
-      zip: "",
-      country: "US",
-    });
-  const [category,        setCategory]       = useState("All");
-  const [search,          setSearch]         = useState("");
-  const [cartOpen,        setCartOpen]       = useState(false);
-  const [highContrast,    setHighContrast]   = useState(false);
-  const [announcement,    setAnnouncement]   = useState("");
-  const [smartPopup,      setSmartPopup]     = useState("");
-  const [recommendedItems,setRecommendedItems] = useState([]);
+  const [cart,             setCart]            = useState([]);
+  const [category,         setCategory]        = useState("All");
+  const [search,           setSearch]          = useState("");
+  const [cartOpen,         setCartOpen]        = useState(false);
+  const [highContrast,     setHighContrast]    = useState(false);
+  const [announcement,     setAnnouncement]    = useState("");
+  const [smartPopup,       setSmartPopup]      = useState("");
+  const [recommendedItems, setRecommendedItems]= useState([]);
 
   // ── Checkout state ──────────────────────────────────────────────────────
-  const [clientSecret,    setClientSecret]   = useState(null);
-  const [checkoutOpen,    setCheckoutOpen]   = useState(false);
-  const [checkoutLoading, setCheckoutLoading]= useState(false);
-  const [checkoutError,   setCheckoutError]  = useState("");
+  const [clientSecret,     setClientSecret]    = useState(null);
+  const [checkoutOpen,     setCheckoutOpen]    = useState(false);
+  const [checkoutLoading,  setCheckoutLoading] = useState(false);
+  const [checkoutError,    setCheckoutError]   = useState("");
+
+  // ── Shipping modal state (NEW) ─────────────────────────────────────────
+  const [paymentIntentId,  setPaymentIntentId] = useState(null);
+  const [shippingOpen,     setShippingOpen]    = useState(false);
 
   const mainRef   = useRef(null);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
-  // ── Add to cart with smart recommendations ──────────────────────────────
   const addToCart = useCallback((product) => {
     setCart((prev) => {
       const existing = prev.find((i) => i.id === product.id);
       const updatedCart = existing
-        ? prev.map((i) => i.id === product.id ? { ...i, qty: i.qty + 1 } : i)
+        ? prev.map((i) => (i.id === product.id ? { ...i, qty: i.qty + 1 } : i))
         : [...prev, { ...product, qty: 1 }];
 
       const related = PRODUCTS
@@ -1138,7 +1192,7 @@ export default function App() {
     });
   }, []);
 
-  // ── Initiate checkout — calls backend, gets clientSecret ────────────────
+  // ── Step 1: PaymentIntent + Stripe modal ───────────────────────────────
   const handleCheckout = useCallback(async () => {
     setCheckoutLoading(true);
     setCheckoutError("");
@@ -1146,24 +1200,19 @@ export default function App() {
 
     try {
       const res = await fetch(
-  `${process.env.REACT_APP_SERVER_URL}/create-payment-intent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          cart,
-          shipping,
-        }),
-      });
-
+        `${process.env.REACT_APP_SERVER_URL}/create-payment-intent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cart }),
+        }
+      );
       const data = await res.json();
-
-      if (!res.ok || data.error) {
-        throw new Error(data.error || "Server error. Please try again.");
-      }
+      if (!res.ok || data.error) throw new Error(data.error || "Server error. Please try again.");
 
       setClientSecret(data.clientSecret);
-      setCartOpen(false);        // close drawer
-      setCheckoutOpen(true);     // open payment modal
+      setCartOpen(false);
+      setCheckoutOpen(true);
       setAnnouncement("Payment form is ready. Please enter your payment details.");
     } catch (err) {
       setCheckoutError(err.message);
@@ -1173,69 +1222,58 @@ export default function App() {
     }
   }, [cart]);
 
-  // ── Called by CheckoutForm on successful confirmPayment ─────────────────
-  const handlePaymentSuccess = useCallback(async (paymentIntentId) => {
-  setCheckoutOpen(false);
-  setClientSecret(null);
+  // ── Step 2: Stripe confirmed → store id, open ShippingModal ────────────
+  const handlePaymentComplete = useCallback((id) => {
+    setPaymentIntentId(id);
+    setCheckoutOpen(false);
+    setClientSecret(null);
+    setShippingOpen(true);
+    setAnnouncement("Payment confirmed! Please enter your shipping details.");
+  }, []);
 
-  try {
-    await fetch(`${process.env.REACT_APP_SERVER_URL}/create-order-after-payment`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        paymentIntentId,
-        cart,
-        shipping,
-      }),
-    });
-  } catch (err) {
-    console.error("Order creation failed:", err);
-  }
-
-  setCart([]);
-  setAnnouncement("Payment confirmed! Order created.");
-}, []);
+  // ── Step 3: Backend order success → reset everything ───────────────────
+  const handleShippingSuccess = useCallback(() => {
+    setShippingOpen(false);
+    setPaymentIntentId(null);
+    setCart([]);
+    setAnnouncement(
+      "Order placed! A confirmation email with tracking info has been sent to you."
+    );
+  }, []);
 
   const handleCheckoutClose = useCallback(() => {
     setCheckoutOpen(false);
     setClientSecret(null);
-    setCartOpen(true);           // re-open cart drawer on cancel
+    setCartOpen(true);
     setAnnouncement("Payment cancelled. Returned to cart.");
-  }, [cart, shipping]);
+  }, []);
 
-  // ── Handle redirect-based payment return (e.g. bank redirect) ──────────
-  // When a redirect payment method returns, Stripe appends
-  // ?payment_intent_client_secret=... to the URL. We detect and confirm here.
+  // ── Redirect-based payment return (bank redirect, etc.) ────────────────
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const secret = params.get("payment_intent_client_secret");
     const status = params.get("redirect_status");
+    const id     = params.get("payment_intent");
 
     if (!secret) return;
 
-    if (status === "succeeded") {
-      setAnnouncement("Payment confirmed! Thank you for your order.");
-      // Optionally clear cart here if you persist it:
-      setCart([]);
+    if (status === "succeeded" && id) {
+      // Payment returned via redirect — jump straight to shipping
+      setPaymentIntentId(id);
+      setShippingOpen(true);
+      setAnnouncement("Payment confirmed! Please enter your shipping details.");
     } else if (status === "requires_payment_method") {
       setAnnouncement("Payment was not completed. Please try again.");
     }
 
-    // Clean the URL so refresh doesn't re-trigger
     window.history.replaceState({}, "", window.location.pathname);
   }, []);
 
-  // ── Keyboard shortcuts ──────────────────────────────────────────────────
   useEffect(() => {
     const handler = (e) => {
       if (e.altKey && e.key === "c") { e.preventDefault(); setCartOpen((o) => !o); }
       if (e.altKey && e.key === "h") { e.preventDefault(); setHighContrast((hc) => !hc); }
-      if (e.key === "Escape") {
-        setCartOpen(false);
-        // Let CheckoutModal handle its own Escape via focus trap
-      }
+      if (e.key === "Escape") setCartOpen(false);
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -1275,21 +1313,14 @@ export default function App() {
 
       <Announcer message={announcement} />
 
-      {/* Skip link */}
       <a
         href="#main-content"
         style={{
-          position: "absolute",
-          top: -60,
-          left: 8,
+          position: "absolute", top: -60, left: 8,
           background: hc ? SDCB.hcYellow : SDCB.blue,
           color: hc ? SDCB.hcBg : SDCB.white,
-          padding: "0.5rem 1rem",
-          borderRadius: 6,
-          fontWeight: 700,
-          zIndex: 9999,
-          textDecoration: "none",
-          transition: "top 0.2s",
+          padding: "0.5rem 1rem", borderRadius: 6, fontWeight: 700,
+          zIndex: 9999, textDecoration: "none", transition: "top 0.2s",
         }}
         onFocus={(e) => (e.currentTarget.style.top = "8px")}
         onBlur={(e)  => (e.currentTarget.style.top = "-60px")}
@@ -1297,37 +1328,21 @@ export default function App() {
         Skip to main content
       </a>
 
-      {/* Header */}
       <header
         role="banner"
         style={{
           background: hc ? "#111" : SDCB.navy,
           borderBottom: hc ? `2px solid ${SDCB.hcYellow}` : "none",
           padding: "1rem 2rem",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          flexWrap: "wrap",
-          gap: "0.75rem",
-          position: "sticky",
-          top: 0,
-          zIndex: 500,
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          flexWrap: "wrap", gap: "0.75rem", position: "sticky", top: 0, zIndex: 500,
         }}
       >
         <div>
           <p style={{ margin: 0, fontSize: "0.7rem", letterSpacing: "0.15em", textTransform: "uppercase", color: hc ? SDCB.hcYellow : SDCB.skyMid, fontWeight: 600 }}>
             San Diego Center for the Blind
           </p>
-          <h1
-            style={{
-              margin: 0,
-              fontFamily: "'Playfair Display', Georgia, serif",
-              fontSize: "clamp(1.2rem, 3vw, 1.7rem)",
-              color: hc ? SDCB.hcYellow : SDCB.white,
-              fontWeight: 700,
-              lineHeight: 1.2,
-            }}
-          >
+          <h1 style={{ margin: 0, fontFamily: "'Playfair Display', Georgia, serif", fontSize: "clamp(1.2rem, 3vw, 1.7rem)", color: hc ? SDCB.hcYellow : SDCB.white, fontWeight: 700, lineHeight: 1.2 }}>
             Accessible Living Store
           </h1>
         </div>
@@ -1337,17 +1352,7 @@ export default function App() {
             onClick={() => setHighContrast((hc) => !hc)}
             aria-pressed={highContrast}
             aria-label={`${highContrast ? "Disable" : "Enable"} high contrast mode (Alt+H)`}
-            style={{
-              background: hc ? SDCB.hcYellow : SDCB.blue,
-              color: hc ? SDCB.hcBg : SDCB.white,
-              border: hc ? "none" : `1.5px solid ${SDCB.skyMid}`,
-              borderRadius: 8,
-              padding: "0.45rem 0.85rem",
-              fontWeight: 600,
-              cursor: "pointer",
-              fontFamily: "inherit",
-              fontSize: "0.82rem",
-            }}
+            style={{ background: hc ? SDCB.hcYellow : SDCB.blue, color: hc ? SDCB.hcBg : SDCB.white, border: hc ? "none" : `1.5px solid ${SDCB.skyMid}`, borderRadius: 8, padding: "0.45rem 0.85rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: "0.82rem" }}
           >
             ◑ {highContrast ? "Standard" : "High Contrast"}
           </button>
@@ -1355,87 +1360,36 @@ export default function App() {
           <button
             onClick={() => { setCartOpen(true); setAnnouncement("Cart opened"); }}
             aria-label={`Open cart${cartCount > 0 ? `, ${cartCount} items` : ""} (Alt+C)`}
-            style={{
-              background: hc ? SDCB.hcYellow : SDCB.skyMid,
-              color: hc ? SDCB.hcBg : SDCB.white,
-              border: "none",
-              borderRadius: 8,
-              padding: "0.45rem 0.95rem",
-              fontWeight: 700,
-              cursor: "pointer",
-              fontFamily: "inherit",
-              fontSize: "0.9rem",
-              display: "flex",
-              alignItems: "center",
-            }}
+            style={{ background: hc ? SDCB.hcYellow : SDCB.skyMid, color: hc ? SDCB.hcBg : SDCB.white, border: "none", borderRadius: 8, padding: "0.45rem 0.95rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: "0.9rem", display: "flex", alignItems: "center" }}
           >
             🛒 Cart {cartCount > 0 && <CartBadge count={cartCount} />}
           </button>
         </nav>
       </header>
 
-      {/* Keyboard shortcuts banner */}
       <div
         role="note"
         aria-label="Keyboard shortcuts"
-        style={{
-          background: hc ? "#111" : SDCB.skyLight,
-          borderBottom: hc ? `1px solid #444` : `1px solid ${SDCB.lightGray}`,
-          padding: "0.4rem 2rem",
-          fontSize: "0.78rem",
-          color: hc ? "#aaa" : SDCB.blue,
-        }}
+        style={{ background: hc ? "#111" : SDCB.skyLight, borderBottom: hc ? `1px solid #444` : `1px solid ${SDCB.lightGray}`, padding: "0.4rem 2rem", fontSize: "0.78rem", color: hc ? "#aaa" : SDCB.blue }}
       >
         <span aria-hidden="true">⌨ </span>
         Keyboard shortcuts: <kbd>Alt+C</kbd> Cart · <kbd>Alt+H</kbd> High Contrast ·{" "}
         <kbd>Tab</kbd> Navigate · <kbd>Enter</kbd> Add to Cart · <kbd>Esc</kbd> Close
       </div>
 
-      {/* Smart cart popup */}
       {smartPopup && (
         <div
           role="status"
           aria-live="polite"
-          style={{
-            position: "fixed",
-            top: 100,
-            right: 20,
-            zIndex: 2000,
-            background: hc ? "#111" : SDCB.white,
-            color: hc ? SDCB.hcYellow : SDCB.navy,
-            border: hc ? `2px solid ${SDCB.hcYellow}` : `2px solid ${SDCB.skyMid}`,
-            borderRadius: 14,
-            padding: "1rem 1.2rem",
-            width: 320,
-            maxWidth: "90vw",
-            boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
-          }}
+          style={{ position: "fixed", top: 100, right: 20, zIndex: 2000, background: hc ? "#111" : SDCB.white, color: hc ? SDCB.hcYellow : SDCB.navy, border: hc ? `2px solid ${SDCB.hcYellow}` : `2px solid ${SDCB.skyMid}`, borderRadius: 14, padding: "1rem 1.2rem", width: 320, maxWidth: "90vw", boxShadow: "0 10px 30px rgba(0,0,0,0.18)" }}
         >
-          <p style={{ margin: 0, fontWeight: 700, fontSize: "0.95rem" }}>
-            ✓ {smartPopup}
-          </p>
-
+          <p style={{ margin: 0, fontWeight: 700, fontSize: "0.95rem" }}>✓ {smartPopup}</p>
           {recommendedItems.length > 0 && (
             <div style={{ marginTop: "0.8rem" }}>
-              <p style={{ margin: "0 0 0.45rem", fontSize: "0.8rem", opacity: 0.8, fontWeight: 600 }}>
-                Suggested items:
-              </p>
+              <p style={{ margin: "0 0 0.45rem", fontSize: "0.8rem", opacity: 0.8, fontWeight: 600 }}>Suggested items:</p>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {recommendedItems.map((item) => (
-                  <button
-                    key={item.id}
-                    onClick={() => addToCart(item)}
-                    style={{
-                      background: hc ? SDCB.hcYellow : SDCB.skyLight,
-                      color: hc ? SDCB.hcBg : SDCB.navy,
-                      border: "none",
-                      borderRadius: 999,
-                      padding: "0.4rem 0.7rem",
-                      fontSize: "0.75rem",
-                      fontWeight: 700,
-                      cursor: "pointer",
-                    }}
-                  >
+                  <button key={item.id} onClick={() => addToCart(item)} style={{ background: hc ? SDCB.hcYellow : SDCB.skyLight, color: hc ? SDCB.hcBg : SDCB.navy, border: "none", borderRadius: 999, padding: "0.4rem 0.7rem", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer" }}>
                     {item.emoji} {item.name}
                   </button>
                 ))}
@@ -1445,22 +1399,10 @@ export default function App() {
         </div>
       )}
 
-      {/* Main content */}
-      <main
-        id="main-content"
-        ref={mainRef}
-        style={{ background: bg, minHeight: "100vh", padding: "1.5rem 2rem 4rem" }}
-      >
-        {/* Search + Filter */}
-        <section
-          aria-label="Search and filter products"
-          style={{ marginBottom: "1.5rem", display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "flex-end" }}
-        >
+      <main id="main-content" ref={mainRef} style={{ background: bg, minHeight: "100vh", padding: "1.5rem 2rem 4rem" }}>
+        <section aria-label="Search and filter products" style={{ marginBottom: "1.5rem", display: "flex", gap: "1rem", flexWrap: "wrap", alignItems: "flex-end" }}>
           <div style={{ flex: 1, minWidth: 220 }}>
-            <label
-              htmlFor="search"
-              style={{ display: "block", marginBottom: 6, fontWeight: 600, color: fg, fontSize: "0.9rem" }}
-            >
+            <label htmlFor="search" style={{ display: "block", marginBottom: 6, fontWeight: 600, color: fg, fontSize: "0.9rem" }}>
               Search Products
             </label>
             <input
@@ -1470,16 +1412,7 @@ export default function App() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="e.g. cooking, clock, braille…"
               aria-label="Search products"
-              style={{
-                width: "100%",
-                padding: "0.6rem 0.9rem",
-                border: hc ? `2px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`,
-                borderRadius: 8,
-                fontSize: "1rem",
-                background: hc ? "#111" : SDCB.white,
-                color: hc ? SDCB.hcYellow : SDCB.navy,
-                fontFamily: "inherit",
-              }}
+              style={{ width: "100%", padding: "0.6rem 0.9rem", border: hc ? `2px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`, borderRadius: 8, fontSize: "1rem", background: hc ? "#111" : SDCB.white, color: hc ? SDCB.hcYellow : SDCB.navy, fontFamily: "inherit" }}
             />
           </div>
 
@@ -1493,18 +1426,7 @@ export default function App() {
                   key={cat}
                   onClick={() => { setCategory(cat); setAnnouncement(`Showing ${cat} products`); }}
                   aria-pressed={category === cat}
-                  style={{
-                    background: category === cat ? (hc ? SDCB.hcYellow : SDCB.blue) : (hc ? "#222" : SDCB.white),
-                    color:      category === cat ? (hc ? SDCB.hcBg : SDCB.white)   : (hc ? SDCB.hcYellow : SDCB.navy),
-                    border: hc ? `1.5px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`,
-                    borderRadius: 20,
-                    padding: "0.35rem 0.85rem",
-                    fontWeight: 600,
-                    cursor: "pointer",
-                    fontFamily: "inherit",
-                    fontSize: "0.82rem",
-                    transition: "all 0.15s",
-                  }}
+                  style={{ background: category === cat ? (hc ? SDCB.hcYellow : SDCB.blue) : (hc ? "#222" : SDCB.white), color: category === cat ? (hc ? SDCB.hcBg : SDCB.white) : (hc ? SDCB.hcYellow : SDCB.navy), border: hc ? `1.5px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`, borderRadius: 20, padding: "0.35rem 0.85rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: "0.82rem", transition: "all 0.15s" }}
                 >
                   {cat}
                 </button>
@@ -1513,54 +1435,23 @@ export default function App() {
           </fieldset>
         </section>
 
-        <p
-          aria-live="polite"
-          style={{ color: hc ? "#aaa" : SDCB.gray, fontSize: "0.85rem", marginBottom: "1rem" }}
-        >
+        <p aria-live="polite" style={{ color: hc ? "#aaa" : SDCB.gray, fontSize: "0.85rem", marginBottom: "1rem" }}>
           {filtered.length} product{filtered.length !== 1 ? "s" : ""} found
         </p>
 
-        <section
-          aria-label="Product listings"
-          className="product-grid"
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
-            gap: "1.25rem",
-          }}
-        >
+        <section aria-label="Product listings" className="product-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1.25rem" }}>
           {filtered.map((product) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              onAddToCart={addToCart}
-              onAnnounce={setAnnouncement}
-              highContrast={highContrast}
-            />
+            <ProductCard key={product.id} product={product} onAddToCart={addToCart} onAnnounce={setAnnouncement} highContrast={highContrast} />
           ))}
           {filtered.length === 0 && (
-            <p
-              role="status"
-              style={{ color: hc ? SDCB.hcYellow : SDCB.gray, gridColumn: "1/-1", textAlign: "center", padding: "2rem" }}
-            >
+            <p role="status" style={{ color: hc ? SDCB.hcYellow : SDCB.gray, gridColumn: "1/-1", textAlign: "center", padding: "2rem" }}>
               No products match your search. Try a different keyword or category.
             </p>
           )}
         </section>
       </main>
 
-      {/* Footer */}
-      <footer
-        role="contentinfo"
-        style={{
-          background: hc ? "#111" : SDCB.navy,
-          color: hc ? SDCB.hcYellow : SDCB.skyMid,
-          padding: "1.5rem 2rem",
-          textAlign: "center",
-          fontSize: "0.85rem",
-          borderTop: hc ? `2px solid ${SDCB.hcYellow}` : "none",
-        }}
-      >
+      <footer role="contentinfo" style={{ background: hc ? "#111" : SDCB.navy, color: hc ? SDCB.hcYellow : SDCB.skyMid, padding: "1.5rem 2rem", textAlign: "center", fontSize: "0.85rem", borderTop: hc ? `2px solid ${SDCB.hcYellow}` : "none" }}>
         <p style={{ margin: 0, color: hc ? SDCB.hcYellow : SDCB.white, fontWeight: 600 }}>
           San Diego Center for the Blind — Accessible Living Store
         </p>
@@ -1572,16 +1463,11 @@ export default function App() {
         </p>
       </footer>
 
-      {/* Cart overlay backdrop */}
       {cartOpen && (
-        <div
-          onClick={() => setCartOpen(false)}
-          aria-hidden="true"
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 999 }}
-        />
+        <div onClick={() => setCartOpen(false)} aria-hidden="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 999 }} />
       )}
 
-      {/* Cart drawer */}
+      {/* Step 1: Cart drawer */}
       <CartDrawer
         cart={cart}
         open={cartOpen}
@@ -1591,19 +1477,26 @@ export default function App() {
         checkoutError={checkoutError}
         highContrast={highContrast}
         onAnnounce={setAnnouncement}
-        shipping={shipping}
-        setShipping={setShipping}
       />
 
-      {/* Embedded Stripe payment modal */}
+      {/* Step 2: Stripe payment modal */}
       <CheckoutModal
         clientSecret={clientSecret}
         cart={cart}
         open={checkoutOpen}
         onClose={handleCheckoutClose}
-        onSuccess={handlePaymentSuccess}
+        onPaymentComplete={handlePaymentComplete}
         highContrast={highContrast}
         onAnnounce={setAnnouncement}
+      />
+
+      {/* Step 3: Shipping modal (NEW) — opens after payment */}
+      <ShippingModal
+        open={shippingOpen}
+        paymentIntentId={paymentIntentId}
+        onSuccess={handleShippingSuccess}
+        onAnnounce={setAnnouncement}
+        highContrast={highContrast}
       />
     </>
   );
