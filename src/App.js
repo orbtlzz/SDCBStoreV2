@@ -475,18 +475,44 @@ function CheckoutForm({ total, onSuccess, onCancel, highContrast, onAnnounce }) 
     
     if (!paymentIntent) return;
 
-    if (paymentIntent.status !== "succeeded") {
-      setStatus("error");
-      setErrorMsg(`Payment status: ${paymentIntent.status}`);
-      return;
-    }
-      setStatus("success");
-      onAnnounce("Payment successful! Thank you for your order.");
-    
-      setTimeout(() => {
-        onSuccess(paymentIntent.id);
-      }, 400);
-    }
+    const handleSubmit = async (e) => {
+  e.preventDefault();
+
+  if (!stripe || !elements) return;
+
+  setStatus("submitting");
+  setErrorMsg("");
+  onAnnounce("Processing your payment. Please wait.");
+
+  const result = await stripe.confirmPayment({
+    elements,
+    redirect: "if_required",
+  });
+
+  if (result.error) {
+    setStatus("error");
+    setErrorMsg(result.error.message ?? "An unexpected error occurred.");
+    onAnnounce(`Payment failed: ${result.error.message}`);
+    return;
+  }
+
+  const paymentIntent = result.paymentIntent;
+  if (!paymentIntent) return;
+
+  if (paymentIntent.status !== "succeeded") {
+    setStatus("error");
+    setErrorMsg(`Payment status: ${paymentIntent.status}`);
+    return;
+  }
+
+  setStatus("success");
+  onAnnounce("Payment successful! Thank you for your order.");
+
+  setTimeout(() => {
+    onSuccess(paymentIntent.id);
+  }, 400);
+};
+  
   if (status === "success") {
     return (
       <div
