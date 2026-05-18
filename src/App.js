@@ -492,13 +492,28 @@ function CheckoutForm({ total, onPaymentComplete, onCancel, highContrast, onAnno
   
     console.log("🟡 PaymentIntent status:", paymentIntent.status);
   
-    if (paymentIntent.status !== "succeeded") {
-      console.warn("⚠️ Payment not succeeded:", paymentIntent.status);
-      setStatus("error");
-      setErrorMsg(`Payment status: ${paymentIntent.status}`);
-      onAnnounce(`Payment not completed. Status: ${paymentIntent.status}`);
+    console.log("🟢 PaymentIntent FULL:", paymentIntent);
+
+    if (
+      paymentIntent.status === "succeeded" ||
+      paymentIntent.status === "processing"
+    ) {
+      console.log("✅ Payment accepted:", paymentIntent.id);
+    
+      onAnnounce("Payment successful! Moving to shipping.");
+      onPaymentComplete(paymentIntent.id);
       return;
     }
+    
+    if (paymentIntent.status === "requires_action") {
+      console.warn("⚠️ Payment requires additional action");
+      return;
+    }
+    
+    console.error("❌ Unexpected payment status:", paymentIntent.status);
+    
+    setStatus("error");
+    setErrorMsg(`Payment status: ${paymentIntent.status}`);
   
     console.log("✅ Payment SUCCEEDED. Handing off id:", paymentIntent.id);
     onAnnounce("Payment successful! Moving to shipping step.");
@@ -1275,14 +1290,33 @@ export default function App() {
 
   // ── Step 2: Stripe confirmed → store id, open ShippingModal ────────────
   const handlePaymentComplete = useCallback((id) => {
-    console.log("🟢 [App] handlePaymentComplete received id:", id);
+    console.log("🟢 [App] handlePaymentComplete fired");
+    console.log("🟢 [App] received paymentIntentId:", id);
+  
+    if (!id) {
+      console.error("❌ [App] Missing paymentIntentId");
+      setAnnouncement("Payment completed but payment ID was missing.");
+      return;
+    }
+  
+    console.log("🟢 [App] Setting paymentIntentId...");
     setPaymentIntentId(id);
+  
+    console.log("🟢 [App] Closing checkout modal...");
     setCheckoutOpen(false);
+  
+    console.log("🟢 [App] Clearing clientSecret...");
     setClientSecret(null);
+  
+    console.log("🟢 [App] Opening shipping modal...");
     setShippingOpen(true);
-    setAnnouncement("Payment confirmed! Please enter your shipping details.");
+  
+    console.log("✅ [App] Shipping modal should now be visible");
+  
+    setAnnouncement(
+      "Payment confirmed! Please enter your shipping details."
+    );
   }, []);
-
   // ── Step 3: Backend order success → reset everything ───────────────────
   const handleShippingSuccess = useCallback(() => {
     setShippingOpen(false);
