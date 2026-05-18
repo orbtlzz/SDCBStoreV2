@@ -13,7 +13,9 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 // STRIPE INIT  ← replace with your real publishable key
 // ─────────────────────────────────────────────────────────────────────────────
-const stripePromise = loadStripe("YOUR_PUBLISHABLE_KEY_HERE");
+const stripePromise = loadStripe(
+  process.env.REACT_APP_STRIPE_PUBLISHABLE_KEY
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SDCB Brand Colors
@@ -457,7 +459,7 @@ function CheckoutForm({ total, onSuccess, onCancel, highContrast, onAnnounce }) 
     // confirmPayment with redirect: "if_required" means:
     //   • card payments resolve here with a result object (no redirect)
     //   • redirect-based methods (bank, iDEAL, etc.) still redirect to return_url
-    const { error } = await stripe.confirmPayment({
+    const result = await stripe.confirmPayment({
       elements,
       confirmParams: {
         // Required for redirect-based payment methods.
@@ -467,17 +469,19 @@ function CheckoutForm({ total, onSuccess, onCancel, highContrast, onAnnounce }) 
       redirect: "if_required",
     });
 
-    if (error) {
-      // error.type === "card_error" | "validation_error" | other
+    if (result.error) {
       setStatus("error");
-      setErrorMsg(error.message ?? "An unexpected error occurred.");
-      onAnnounce(`Payment failed: ${error.message}`);
+      setErrorMsg(result.error.message ?? "An unexpected error occurred.");
+      onAnnounce(`Payment failed: ${result.error.message}`);
     } else {
-      // Payment confirmed successfully (no redirect needed)
+      const paymentIntent = result.paymentIntent;
+
       setStatus("success");
       onAnnounce("Payment successful! Thank you for your order.");
-      // Short delay so the announcer fires before we unmount
-      setTimeout(onSuccess, 400);
+
+      setTimeout(() => {
+         onSuccess(paymentIntent.id);
+      }, 400);
     }
   };
 
@@ -794,7 +798,18 @@ function CheckoutModal({
 // ─────────────────────────────────────────────────────────────────────────────
 // CART DRAWER
 // ─────────────────────────────────────────────────────────────────────────────
-function CartDrawer({ cart, open, onClose, onCheckout, checkoutLoading, checkoutError, highContrast, onAnnounce }) {
+function CartDrawer({
+  cart,
+  open,
+  onClose,
+  onCheckout,
+  checkoutLoading,
+  checkoutError,
+  highContrast,
+  onAnnounce,
+  shipping,
+  setShipping,
+}) {
   const closeRef = useRef(null);
 
   useEffect(() => {
@@ -915,6 +930,99 @@ function CartDrawer({ cart, open, onClose, onCheckout, checkoutLoading, checkout
             </div>
           )}
 
+            <div
+              style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 10,
+              marginTop: 12,
+            }}
+          >
+            <input
+              type="text"
+              placeholder="Full Name"
+              value={shipping.name}
+              onChange={(e) =>
+                setShipping({ ...shipping, name: e.target.value })
+              }
+              style={{
+                padding: "0.65rem",
+                borderRadius: 8,
+                border: "1px solid #ccc",
+              }}
+            />
+
+            <input
+              type="email"
+              placeholder="Email Address"
+              value={shipping.email}
+              onChange={(e) =>
+                setShipping({ ...shipping, email: e.target.value })
+              }
+              style={{
+                padding: "0.65rem",
+                borderRadius: 8,
+                border: "1px solid #ccc",
+              }}
+            />
+
+            <input
+              type="text"
+              placeholder="Street Address"
+              value={shipping.address1}
+              onChange={(e) =>
+                setShipping({ ...shipping, address1: e.target.value })
+              }
+              style={{
+                padding: "0.65rem",
+                borderRadius: 8,
+                border: "1px solid #ccc",
+              }}
+            />
+
+            <input
+              type="text"
+              placeholder="City"
+              value={shipping.city}
+              onChange={(e) =>
+                setShipping({ ...shipping, city: e.target.value })
+              }
+              style={{
+                padding: "0.65rem",
+                borderRadius: 8,
+                border: "1px solid #ccc",
+              }}
+            />
+
+            <input
+              type="text"
+              placeholder="State"
+              value={shipping.state}
+              onChange={(e) =>
+                setShipping({ ...shipping, state: e.target.value })
+              }
+              style={{
+                padding: "0.65rem",
+                borderRadius: 8,
+                border: "1px solid #ccc",
+              }}
+            />
+  
+            <input
+              type="text"
+              placeholder="ZIP Code"
+              value={shipping.zip}
+              onChange={(e) =>
+                setShipping({ ...shipping, zip: e.target.value })
+              }
+              style={{
+                padding: "0.65rem",
+                borderRadius: 8,
+                border: "1px solid #ccc",
+              }}
+            />
+          </div>
+
           <button
             style={{
               ...btnStyle(highContrast, "primary"),
@@ -944,8 +1052,15 @@ function CartDrawer({ cart, open, onClose, onCheckout, checkoutLoading, checkout
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
   const [cart,            setCart]           = useState([]);
-  const [shipping, setShipping] = useState(null);
-  const [paymentIntentId, setPaymentIntentId] = useState(null);
+  const [shipping, setShipping] = useState({
+      name: "",
+      email: "",
+      address1: "",
+      city: "",
+      state: "",
+      zip: "",
+      country: "US",
+    });
   const [category,        setCategory]       = useState("All");
   const [search,          setSearch]         = useState("");
   const [cartOpen,        setCartOpen]       = useState(false);
@@ -1023,17 +1138,20 @@ export default function App() {
   }, [cart]);
 
   // ── Called by CheckoutForm on successful confirmPayment ─────────────────
-  const handlePaymentSuccess = useCallback(async () => {
+  const handlePaymentSuccess = useCallback(async (paymentIntentId) => {
   setCheckoutOpen(false);
   setClientSecret(null);
 
   try {
     await fetch(`${process.env.REACT_APP_SERVER_URL}/create-order-after-payment`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify({
-        paymentIntentId: currentPaymentIntentId, // you are NOT storing this yet (important!)
-        shipping: savedShippingData,
+        paymentIntentId,
+        cart,
+        shipping,
       }),
     });
   } catch (err) {
@@ -1437,6 +1555,8 @@ export default function App() {
         checkoutError={checkoutError}
         highContrast={highContrast}
         onAnnounce={setAnnouncement}
+        shipping={shipping}
+        setShipping={setShipping}
       />
 
       {/* Embedded Stripe payment modal */}
