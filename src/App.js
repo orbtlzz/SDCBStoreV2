@@ -480,36 +480,18 @@ function CheckoutForm({ total, onPaymentComplete, onCancel, highContrast, onAnno
     // 3. Only proceed if succeeded
     if (paymentIntent.status !== "succeeded") {
       console.warn("⚠️ Payment not succeeded:", paymentIntent.status);
+    
+      setStatus("error");
+      setErrorMsg(`Payment status: ${paymentIntent.status}`);
+      onAnnounce(`Payment not completed. Status: ${paymentIntent.status}`);
+    
       return;
     }
-  
-    // 4. CALL BACKEND (THIS IS THE CRITICAL PART)
-    try {
-      console.log("📦 Sending order to backend...");
-  
-      const res = await fetch(
-        "https://YOUR-RENDER-URL.onrender.com/create-order-after-payment",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            paymentIntentId: paymentIntent.id,
-            shipping,
-          }),
-        }
-      );
-  
-      const data = await res.json();
-  
-      console.log("✅ Order created:", data);
-  
-      setStatus("success");
-      onAnnounce("Order completed successfully!");
-    } catch (err) {
-      console.error("❌ Order API failed:", err);
-      setStatus("error");
-      setErrorMsg("Payment succeeded, but order creation failed.");
-    }
+      
+    // 4. MOVE TO SHIPPING STEP (IMPORTANT)
+onAnnounce("Payment successful! Moving to shipping step.");
+onPaymentComplete(paymentIntent.id);
+return;
   };
 
   const isSubmitting = status === "submitting";
