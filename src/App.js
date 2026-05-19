@@ -453,71 +453,133 @@ function CheckoutForm({ total, onPaymentComplete, onCancel, highContrast, onAnno
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!stripe || !elements) return;
   
-    console.log("🟡 [CheckoutForm] Submitting to Stripe...");
+    if (!stripe || !elements) {
+      console.warn("⚠️ Stripe.js not ready yet");
+      return;
+    }
+  
+    console.log("🟡 [CheckoutForm] Starting payment submission");
+  
     setStatus("submitting");
     setErrorMsg("");
+  
     onAnnounce("Processing your payment. Please wait.");
   
-    const result = await stripe.confirmPayment({
-      elements,
-      // REQUIRED: even with `redirect: "if_required"`, Stripe validates
-      // this is present because automatic_payment_methods may include
-      // redirect-based methods (Link, Cash App, bank redirects, etc.)
-      confirmParams: {
-        return_url: window.location.origin,
-      },
-      redirect: "if_required",
-    });
+    try {
+      const result = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          return_url: window.location.origin,
+        },
+        redirect: "if_required",
+      });
   
-    console.log("🟡 [CheckoutForm] confirmPayment result:", result);
+      console.log("🟡 [CheckoutForm] confirmPayment result:", result);
   
-    if (result.error) {
-      console.error("❌ Stripe error:", result.error);
+      // ─────────────────────────────
+      // STRIPE ERROR
+      // ─────────────────────────────
+      if (result.error) {
+        console.error("❌ Stripe returned error:", result.error);
+  
+        setStatus("error");
+  
+        setErrorMsg(
+          result.error.message || "Payment failed. Please try again."
+        );
+  
+        onAnnounce(
+          `Payment failed: ${
+            result.error.message || "Unknown error"
+          }`
+        );
+  
+        return;
+      }
+  
+      // ─────────────────────────────
+      // PAYMENT INTENT CHECK
+      // ─────────────────────────────
+      const paymentIntent = result.paymentIntent;
+  
+      if (!paymentIntent) {
+        console.error("❌ No paymentIntent returned");
+  
+        setStatus("error");
+  
+        setErrorMsg(
+          "Payment confirmation failed. Please refresh and try again."
+        );
+  
+        return;
+      }
+  
+      console.log(
+        "🟢 PaymentIntent received:",
+        paymentIntent.id
+      );
+  
+      console.log(
+        "🟢 PaymentIntent status:",
+        paymentIntent.status
+      );
+  
+      // ─────────────────────────────
+      // SUCCESS STATES
+      // ─────────────────────────────
+      if (
+        paymentIntent.status === "succeeded" ||
+        paymentIntent.status === "processing"
+      ) {
+        console.log(
+          "✅ Payment accepted:",
+          paymentIntent.id
+        );
+  
+        onAnnounce(
+          "Payment successful! Moving to shipping step."
+        );
+  
+        onPaymentComplete(paymentIntent.id);
+  
+        return;
+      }
+  
+      // ─────────────────────────────
+      // ADDITIONAL AUTH
+      // ─────────────────────────────
+      if (paymentIntent.status === "requires_action") {
+        console.warn(
+          "⚠️ Payment requires additional customer action"
+        );
+  
+        return;
+      }
+  
+      // ─────────────────────────────
+      // UNKNOWN STATUS
+      // ─────────────────────────────
+      console.error(
+        "❌ Unexpected payment status:",
+        paymentIntent.status
+      );
+  
       setStatus("error");
-      setErrorMsg(result.error.message ?? "An unexpected error occurred.");
-      onAnnounce(`Payment failed: ${result.error.message}`);
-      return;
-    }
   
-    const paymentIntent = result.paymentIntent;
-    if (!paymentIntent) {
-      console.error("❌ Missing paymentIntent");
+      setErrorMsg(
+        `Unexpected payment status: ${paymentIntent.status}`
+      );
+  
+    } catch (err) {
+      console.error("❌ confirmPayment crashed:", err);
+  
       setStatus("error");
-      setErrorMsg("Payment ID missing. Please contact support.");
-      onAnnounce("Payment ID missing. Please contact support.");
-      return;
-    }
   
-    console.log("🟡 PaymentIntent status:", paymentIntent.status);
-  
-    console.log("🟢 PaymentIntent FULL:", paymentIntent);
-
-    if (
-      paymentIntent.status === "succeeded" ||
-      paymentIntent.status === "processing"
-    ) {
-      console.log("✅ Payment accepted:", paymentIntent.id);
-    
-      onAnnounce("Payment successful! Moving to shipping.");
-      onPaymentComplete(paymentIntent.id);
-      return;
+      setErrorMsg(
+        err.message || "Unexpected payment error"
+      );
     }
-    
-    if (paymentIntent.status === "requires_action") {
-      console.warn("⚠️ Payment requires additional action");
-      return;
-    }
-    
-    console.error("❌ Unexpected payment status:", paymentIntent.status);
-    
-    setStatus("error");
-    setErrorMsg(`Payment status: ${paymentIntent.status}`);
-  
-    console.log("✅ Payment SUCCEEDED. Handing off id:", paymentIntent.id);
-    onAnnounce("Payment successful! Moving to shipping step.");
-    onPaymentComplete(paymentIntent.id);
   };
 
   const isSubmitting = status === "submitting";
@@ -612,6 +674,11 @@ function CheckoutModal({
 }) {
   const dialogRef  = useRef(null);
   const total      = cart.reduce((s, i) => s + i.price * i.qty, 0);
+
+  console.log("🟡 CheckoutModal render:", {
+    open,
+    clientSecret,
+  });
 
   useEffect(() => {
     if (open && dialogRef.current) dialogRef.current.focus();
@@ -735,6 +802,13 @@ function ShippingModal({ open, paymentIntentId, onSuccess, onAnnounce, highContr
   });
   const [status,   setStatus]   = useState("idle"); // idle | submitting | success | error
   const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    console.log("🟣 ShippingModal state:", {
+      open,
+      paymentIntentId,
+    });
+  }, [open, paymentIntentId]);
 
   // Reset form + focus first field on open
   useEffect(() => {
@@ -1290,32 +1364,34 @@ export default function App() {
 
   // ── Step 2: Stripe confirmed → store id, open ShippingModal ────────────
   const handlePaymentComplete = useCallback((id) => {
-    console.log("🟢 [App] handlePaymentComplete fired");
-    console.log("🟢 [App] received paymentIntentId:", id);
+    console.log("🟢 [App] Payment completed:", id);
   
     if (!id) {
-      console.error("❌ [App] Missing paymentIntentId");
-      setAnnouncement("Payment completed but payment ID was missing.");
+      console.error("❌ Missing paymentIntentId");
       return;
     }
   
-    console.log("🟢 [App] Setting paymentIntentId...");
+    // Store payment ID FIRST
     setPaymentIntentId(id);
   
-    console.log("🟢 [App] Closing checkout modal...");
+    // Close Stripe modal
     setCheckoutOpen(false);
   
-    console.log("🟢 [App] Clearing clientSecret...");
-    setClientSecret(null);
+    // Delay next modal slightly
+    setTimeout(() => {
+      console.log("🟢 Opening shipping modal");
   
-    console.log("🟢 [App] Opening shipping modal...");
-    setShippingOpen(true);
+      setShippingOpen(true);
   
-    console.log("✅ [App] Shipping modal should now be visible");
+      setAnnouncement(
+        "Payment confirmed! Please enter your shipping details."
+      );
   
-    setAnnouncement(
-      "Payment confirmed! Please enter your shipping details."
-    );
+      // cleanup AFTER modal opens
+      setClientSecret(null);
+  
+    }, 150);
+  
   }, []);
   // ── Step 3: Backend order success → reset everything ───────────────────
   const handleShippingSuccess = useCallback(() => {
