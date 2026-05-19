@@ -112,8 +112,8 @@ async function createShippoLabel(shipping) {
           state: "CA",
           zip: "92115",
           country: "US",
-          email: "store@sdcb.org",
-          phone: "6195831542",
+          email: "ageorge@sdcb.org",
+          phone: "+16195831542",
         },
         address_to: {
         name: shipping.name,
