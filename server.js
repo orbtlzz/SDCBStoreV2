@@ -152,8 +152,15 @@ async function createShippoLabel(shipping) {
     );
   }
 
+  console.log("📊 All rates:", JSON.stringify(rates.map(r => ({
+    provider: r.provider,
+    amount: r.amount,
+    object_state: r.object_state,
+    attributes: r.attributes
+  })), null, 2));
+  console.log("📊 Shippo messages:", shipmentData.messages);
+
   const cheapestRate = rates
-    .filter((r) => r.object_state === "VALID")
     .sort((a, b) => parseFloat(a.amount) - parseFloat(b.amount))[0];
 
   if (!cheapestRate) {
