@@ -100,20 +100,22 @@ async function createShippoLabel(shipping) {
   };
 
   // ── Step 1: Create shipment ──────────────────────────────────────────
-  console.log("🚚 Creating Shippo shipment...");
-  const shipmentRes = await fetch("https://api.goshippo.com/shipments/", {
-    method: "POST",
-    headers: shippoHeaders,
-    body: JSON.stringify({
-      address_from: {
-        name: "San Diego Center for the Blind",
-        street1: "5922 El Cajon Blvd",
-        city: "San Diego",
-        state: "CA",
-        zip: "92115",
-        country: "US",
-      },
-      address_to: {
+    console.log("🚚 Creating Shippo shipment...");
+    const shipmentRes = await fetch("https://api.goshippo.com/shipments/", {
+      method: "POST",
+      headers: shippoHeaders,
+      body: JSON.stringify({
+        address_from: {
+          name: "San Diego Center for the Blind",
+          street1: "5922 El Cajon Blvd",
+          city: "San Diego",
+          state: "CA",
+          zip: "92115",
+          country: "US",
+          email: "store@sdcb.org",
+          phone: "6195831542",
+        },
+        address_to: {
         name: shipping.name,
         // FIX: frontend sends `address`, not `address1`
         street1: shipping.address,
