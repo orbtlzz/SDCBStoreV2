@@ -3,13 +3,17 @@ import cors from "cors";
 import Stripe from "stripe";
 import fetch from "node-fetch";
 import nodemailer from "nodemailer";
+import shippo from "shippo";
 
 const app = express();
 
 // ─────────────────────────────────────────────────────
 // STRIPE
 // ─────────────────────────────────────────────────────
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
+const shippoClient = shippo(process.env.SHIPPO_API_TOKEN);
 
 // ─────────────────────────────────────────────────────
 // CORS  (registered BEFORE routes and express.json)
