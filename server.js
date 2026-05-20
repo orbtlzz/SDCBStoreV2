@@ -130,7 +130,10 @@ app.post("/create-payment-intent", async (req, res) => {
       amount: calculation.amount_total,
       currency: "usd",
       automatic_payment_methods: { enabled: true },
-      metadata: { tax_calculation: calculation.id },
+      metadata: {
+        tax_calculation: calculation.id,
+        shipping: JSON.stringify(shipping),
+      },
     });
 
     console.log("✅ PaymentIntent created:", paymentIntent.id);
@@ -279,20 +282,11 @@ app.post("/create-order-after-payment", async (req, res) => {
   console.log("📦 Body received:", JSON.stringify(req.body, null, 2));
 
   try {
-    const { shipping, paymentIntentId } = req.body;
+    const { paymentIntentId } = req.body;
 
     if (!paymentIntentId) {
       console.error("❌ Missing paymentIntentId");
       return res.status(400).json({ error: "Missing paymentIntentId" });
-    }
-
-    // FIX: validate `address` (matches frontend), not `address1`
-    const requiredShippingFields = ["name", "email", "address", "city", "zip"];
-    for (const field of requiredShippingFields) {
-      if (!shipping?.[field]) {
-        console.error(`❌ Missing shipping field: ${field}`);
-        return res.status(400).json({ error: `Missing shipping field: ${field}` });
-      }
     }
 
     // ── Verify payment with Stripe ───────────────────────────────────
@@ -304,6 +298,26 @@ app.post("/create-order-after-payment", async (req, res) => {
       return res
         .status(400)
         .json({ error: `Payment not completed. Status: ${paymentIntent.status}` });
+    }
+
+    // Resolve the shipping address: prefer the request body, but fall back
+    // to the PaymentIntent metadata (covers redirect-based payments where
+    // the page reloaded and lost the in-memory address).
+    let shipping = req.body.shipping;
+    if (!shipping && paymentIntent.metadata?.shipping) {
+      try {
+        shipping = JSON.parse(paymentIntent.metadata.shipping);
+      } catch {
+        console.error("❌ Could not parse shipping from PaymentIntent metadata");
+      }
+    }
+
+    const requiredShippingFields = ["name", "email", "address", "city", "zip"];
+    for (const field of requiredShippingFields) {
+      if (!shipping?.[field]) {
+        console.error(`❌ Missing shipping field: ${field}`);
+        return res.status(400).json({ error: `Missing shipping field: ${field}` });
+      }
     }
 
     // Record the tax transaction for reporting
