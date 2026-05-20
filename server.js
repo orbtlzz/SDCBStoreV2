@@ -55,6 +55,36 @@ const transporter = nodemailer.createTransport({
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
 // ─────────────────────────────────────────────────────
+// PRODUCTS — pulled from Google Sheet via Apps Script
+// ─────────────────────────────────────────────────────
+const SHEET_URL =
+  "https://script.google.com/macros/s/AKfycbynLLqzibougdNher86Qe4fLBkfqW9L2Ou26I0DI6TUQFQH9Y-V5bjPLB5XL7N20YoyPA/exec";
+
+let productCache = { data: null, fetchedAt: 0 };
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+async function getProducts() {
+  if (productCache.data && Date.now() - productCache.fetchedAt < CACHE_TTL) {
+    return productCache.data;
+  }
+  const response = await fetch(SHEET_URL);
+  if (!response.ok) throw new Error("Sheet fetch failed: " + response.status);
+  const data = await response.json();
+  productCache = { data, fetchedAt: Date.now() };
+  return data;
+}
+
+app.get("/products", async (_req, res) => {
+  try {
+    res.json(await getProducts());
+  } catch (err) {
+    console.error("❌ /products error:", err.message);
+    if (productCache.data) return res.json(productCache.data);
+    res.status(500).json({ error: "Could not load products" });
+  }
+});
+
+// ─────────────────────────────────────────────────────
 // CREATE PAYMENT INTENT
 // ─────────────────────────────────────────────────────
 app.post("/create-payment-intent", async (req, res) => {
