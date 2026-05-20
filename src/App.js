@@ -676,11 +676,12 @@ function CheckoutModal({
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SHIPPING MODAL  (NEW)
-// Opens AFTER payment succeeds. Collects shipping, POSTs to backend, then
-// triggers final success cleanup.
+// SHIPPING ADDRESS MODAL
+// Opens BEFORE payment. Collects the address, then asks the backend to
+// calculate tax + create the PaymentIntent. On success, hands the address and
+// payment data up via onReady() so the payment modal can open.
 // ─────────────────────────────────────────────────────────────────────────────
-function ShippingModal({ open, paymentIntentId, onSuccess, onAnnounce, highContrast }) {
+function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
   const dialogRef = useRef(null);
   const firstRef  = useRef(null);
   const errorRef  = useRef(null);
@@ -688,17 +689,9 @@ function ShippingModal({ open, paymentIntentId, onSuccess, onAnnounce, highContr
   const [shipping, setShipping] = useState({
     name: "", email: "", address: "", city: "", state: "", zip: "",
   });
-  const [status,   setStatus]   = useState("idle"); // idle | submitting | success | error
+  const [status,   setStatus]   = useState("idle"); // idle | submitting | error
   const [errorMsg, setErrorMsg] = useState("");
 
-  useEffect(() => {
-    console.log("🟣 ShippingModal state:", {
-      open,
-      paymentIntentId,
-    });
-  }, [open, paymentIntentId]);
-
-  // Reset form + focus first field on open
   useEffect(() => {
     if (open) {
       setShipping({ name: "", email: "", address: "", city: "", state: "", zip: "" });
@@ -708,12 +701,10 @@ function ShippingModal({ open, paymentIntentId, onSuccess, onAnnounce, highContr
     }
   }, [open]);
 
-  // Move focus to error when it appears
   useEffect(() => {
     if (status === "error" && errorRef.current) errorRef.current.focus();
   }, [status]);
 
-  // Focus trap
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (e) => {
@@ -735,78 +726,56 @@ function ShippingModal({ open, paymentIntentId, onSuccess, onAnnounce, highContr
     setShipping((s) => ({ ...s, [field]: e.target.value }));
 
   const handleSubmit = async (e) => {
-  e.preventDefault();
+    e.preventDefault();
 
-  console.log("🟡 [ShippingModal] submit clicked");
-  console.log("🟡 [ShippingModal] paymentIntentId =", paymentIntentId);
-  console.log("🟡 [ShippingModal] shipping =", shipping);
-
-  const required = [
-    { key: "name",    label: "full name" },
-    { key: "email",   label: "email address" },
-    { key: "address", label: "street address" },
-    { key: "city",    label: "city" },
-    { key: "zip",     label: "ZIP code" },
-  ];
-  for (const { key, label } of required) {
-    if (!shipping[key].trim()) {
-      console.warn(`⚠️ [ShippingModal] missing field: ${key}`);
+    const required = [
+      { key: "name",    label: "full name" },
+      { key: "email",   label: "email address" },
+      { key: "address", label: "street address" },
+      { key: "city",    label: "city" },
+      { key: "zip",     label: "ZIP code" },
+    ];
+    for (const { key, label } of required) {
+      if (!shipping[key].trim()) {
+        setStatus("error");
+        setErrorMsg(`Please enter your ${label}.`);
+        onAnnounce(`Error: Please enter your ${label}.`);
+        return;
+      }
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(shipping.email)) {
       setStatus("error");
-      setErrorMsg(`Please enter your ${label}.`);
-      onAnnounce(`Error: Please enter your ${label}.`);
+      setErrorMsg("Please enter a valid email address.");
+      onAnnounce("Error: Please enter a valid email address.");
       return;
     }
-  }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(shipping.email)) {
-    setStatus("error");
-    setErrorMsg("Please enter a valid email address.");
-    onAnnounce("Error: Please enter a valid email address.");
-    return;
-  }
 
-  // Guard: paymentIntentId must exist
-  if (!paymentIntentId) {
-    console.error("❌ [ShippingModal] paymentIntentId is missing — cannot create order");
-    setStatus("error");
-    setErrorMsg("Payment session lost. Please refresh and try again.");
-    onAnnounce("Payment session lost. Please refresh and try again.");
-    return;
-  }
+    setStatus("submitting");
+    setErrorMsg("");
+    onAnnounce("Calculating tax and preparing payment. Please wait.");
 
-  setStatus("submitting");
-  setErrorMsg("");
-  onAnnounce("Submitting your shipping information. Please wait.");
-
-  const url = `${process.env.REACT_APP_SERVER_URL}/create-order-after-payment`;
-  console.log("🟡 [ShippingModal] POSTing to:", url);
-
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ shipping, paymentIntentId }),
-    });
-
-    console.log("🟡 [ShippingModal] response status:", res.status, res.statusText);
-
-    const data = await res.json();
-    console.log("🟡 [ShippingModal] response body:", data);
-
-    if (!res.ok || data.error) {
-      throw new Error(data.error || `Server responded ${res.status}`);
+    try {
+      const res = await fetch(
+        `${process.env.REACT_APP_SERVER_URL}/create-payment-intent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cart, shipping }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `Server responded ${res.status}`);
+      }
+      onAnnounce("Address saved. Opening secure payment.");
+      onReady(shipping, data);
+    } catch (err) {
+      console.error("❌ [ShippingModal] create-payment-intent failed:", err);
+      setStatus("error");
+      setErrorMsg(err.message);
+      onAnnounce(`Error: ${err.message}`);
     }
-
-    console.log("✅ [ShippingModal] order created. tracking:", data.trackingNumber);
-    setStatus("success");
-    onAnnounce(`Order confirmed! A confirmation email has been sent to ${shipping.email}.`);
-    setTimeout(onSuccess, 700);
-  } catch (err) {
-    console.error("❌ [ShippingModal] fetch failed:", err);
-    setStatus("error");
-    setErrorMsg(err.message);
-    onAnnounce(`Error: ${err.message}`);
-  }
-};
+  };
 
   if (!open) return null;
 
@@ -846,206 +815,140 @@ function ShippingModal({ open, paymentIntentId, onSuccess, onAnnounce, highContr
     boxShadow: "0 20px 60px rgba(13,61,110,0.25)",
     outline: "none",
   };
-
-  if (status === "success") {
-    return (
-      <>
-        <div aria-hidden="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1500 }} />
-        <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Order confirmed" tabIndex={-1} style={dialogStyle}>
-          <div role="status" aria-live="polite" style={{ textAlign: "center", padding: "1.5rem 0" }}>
-            <p style={{ fontSize: "3rem", margin: "0 0 0.75rem" }}>🎉</p>
-            <p style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: "1.4rem", fontWeight: 700, color: highContrast ? SDCB.hcYellow : SDCB.navy, margin: "0 0 0.5rem" }}>
-              Order Placed!
-            </p>
-            <p style={{ color: highContrast ? SDCB.hcText : SDCB.gray, margin: "0 0 0.25rem", fontSize: "0.95rem" }}>
-              A confirmation email with tracking info has been sent to
-            </p>
-            <p style={{ color: highContrast ? SDCB.hcYellow : SDCB.blue, fontWeight: 700, margin: 0 }}>
-              {shipping.email}
-            </p>
-          </div>
-        </div>
-      </>
-    );
-  }
+  const reqMark = <span aria-hidden="true" style={{ color: highContrast ? "#f88" : "#C53030" }}>*</span>;
 
   return (
     <>
       <div aria-hidden="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1500 }} />
-      <div
-        ref={dialogRef}
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="shipping-modal-title"
-        tabIndex={-1}
-        style={dialogStyle}
-      >
-        <p
-          id="shipping-modal-title"
-          style={{ margin: 0, fontFamily: "'Playfair Display', Georgia, serif", fontSize: "1.3rem", fontWeight: 700, color: highContrast ? SDCB.hcYellow : SDCB.navy }}
-        >
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="shipping-modal-title" tabIndex={-1} style={dialogStyle}>
+        <p id="shipping-modal-title" style={{ margin: 0, fontFamily: "'Playfair Display', Georgia, serif", fontSize: "1.3rem", fontWeight: 700, color: highContrast ? SDCB.hcYellow : SDCB.navy }}>
           Shipping Information
         </p>
-
         <p style={{ margin: "0.4rem 0 1.25rem", fontSize: "0.85rem", color: highContrast ? "#aaa" : SDCB.gray }}>
-          Your payment was successful. Enter your shipping details and we'll get your order on its way.
+          Enter your shipping address. We'll calculate tax and take you to secure payment next.
         </p>
 
         {status === "error" && (
-          <div
-            ref={errorRef}
-            role="alert"
-            tabIndex={-1}
-            aria-live="assertive"
-            style={{
-              background: highContrast ? "#300" : "#FFF0F0",
-              border: `1.5px solid ${highContrast ? "#f88" : "#E53E3E"}`,
-              borderRadius: 8,
-              padding: "0.7rem 1rem",
-              color: highContrast ? "#faa" : "#C53030",
-              fontSize: "0.9rem",
-              marginBottom: "1rem",
-              outline: "none",
-            }}
-          >
+          <div ref={errorRef} role="alert" tabIndex={-1} aria-live="assertive"
+            style={{ background: highContrast ? "#300" : "#FFF0F0", border: `1.5px solid ${highContrast ? "#f88" : "#E53E3E"}`, borderRadius: 8, padding: "0.7rem 1rem", color: highContrast ? "#faa" : "#C53030", fontSize: "0.9rem", marginBottom: "1rem", outline: "none" }}>
             <strong>Error:</strong> {errorMsg}
           </div>
         )}
 
-        <form
-          onSubmit={handleSubmit}
-          noValidate
-          aria-label="Shipping information form"
-          style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}
-        >
+        <form onSubmit={handleSubmit} noValidate aria-label="Shipping information form" style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
           <div>
-            <label htmlFor="ship-name" style={labelStyle}>
-              Full Name <span aria-hidden="true" style={{ color: highContrast ? "#f88" : "#C53030" }}>*</span>
-            </label>
-            <input
-              ref={firstRef}
-              id="ship-name"
-              type="text"
-              autoComplete="name"
-              required
-              aria-required="true"
-              value={shipping.name}
-              onChange={handleChange("name")}
-              disabled={isSubmitting}
-              style={inputStyle}
-            />
+            <label htmlFor="ship-name" style={labelStyle}>Full Name {reqMark}</label>
+            <input ref={firstRef} id="ship-name" type="text" autoComplete="name" required aria-required="true"
+              value={shipping.name} onChange={handleChange("name")} disabled={isSubmitting} style={inputStyle} />
           </div>
-
           <div>
-            <label htmlFor="ship-email" style={labelStyle}>
-              Email Address <span aria-hidden="true" style={{ color: highContrast ? "#f88" : "#C53030" }}>*</span>
-            </label>
-            <input
-              id="ship-email"
-              type="email"
-              autoComplete="email"
-              required
-              aria-required="true"
-              value={shipping.email}
-              onChange={handleChange("email")}
-              disabled={isSubmitting}
-              style={inputStyle}
-            />
+            <label htmlFor="ship-email" style={labelStyle}>Email Address {reqMark}</label>
+            <input id="ship-email" type="email" autoComplete="email" required aria-required="true"
+              value={shipping.email} onChange={handleChange("email")} disabled={isSubmitting} style={inputStyle} />
           </div>
-
           <div>
-            <label htmlFor="ship-address" style={labelStyle}>
-              Street Address <span aria-hidden="true" style={{ color: highContrast ? "#f88" : "#C53030" }}>*</span>
-            </label>
-            <input
-              id="ship-address"
-              type="text"
-              autoComplete="street-address"
-              required
-              aria-required="true"
-              value={shipping.address}
-              onChange={handleChange("address")}
-              disabled={isSubmitting}
-              style={inputStyle}
-            />
+            <label htmlFor="ship-address" style={labelStyle}>Street Address {reqMark}</label>
+            <input id="ship-address" type="text" autoComplete="street-address" required aria-required="true"
+              value={shipping.address} onChange={handleChange("address")} disabled={isSubmitting} style={inputStyle} />
           </div>
-
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: "0.6rem" }}>
             <div>
-              <label htmlFor="ship-city" style={labelStyle}>
-                City <span aria-hidden="true" style={{ color: highContrast ? "#f88" : "#C53030" }}>*</span>
-              </label>
-              <input
-                id="ship-city"
-                type="text"
-                autoComplete="address-level2"
-                required
-                aria-required="true"
-                value={shipping.city}
-                onChange={handleChange("city")}
-                disabled={isSubmitting}
-                style={inputStyle}
-              />
+              <label htmlFor="ship-city" style={labelStyle}>City {reqMark}</label>
+              <input id="ship-city" type="text" autoComplete="address-level2" required aria-required="true"
+                value={shipping.city} onChange={handleChange("city")} disabled={isSubmitting} style={inputStyle} />
             </div>
             <div>
               <label htmlFor="ship-state" style={labelStyle}>State</label>
-              <input
-                id="ship-state"
-                type="text"
-                autoComplete="address-level1"
-                placeholder="CA"
-                maxLength={2}
+              <input id="ship-state" type="text" autoComplete="address-level1" placeholder="CA" maxLength={2}
                 aria-label="State (2-letter abbreviation, optional)"
-                value={shipping.state}
-                onChange={handleChange("state")}
-                disabled={isSubmitting}
-                style={inputStyle}
-              />
+                value={shipping.state} onChange={handleChange("state")} disabled={isSubmitting} style={inputStyle} />
             </div>
             <div>
-              <label htmlFor="ship-zip" style={labelStyle}>
-                ZIP <span aria-hidden="true" style={{ color: highContrast ? "#f88" : "#C53030" }}>*</span>
-              </label>
-              <input
-                id="ship-zip"
-                type="text"
-                autoComplete="postal-code"
-                inputMode="numeric"
-                required
-                aria-required="true"
-                value={shipping.zip}
-                onChange={handleChange("zip")}
-                disabled={isSubmitting}
-                style={inputStyle}
-              />
+              <label htmlFor="ship-zip" style={labelStyle}>ZIP {reqMark}</label>
+              <input id="ship-zip" type="text" autoComplete="postal-code" inputMode="numeric" required aria-required="true"
+                value={shipping.zip} onChange={handleChange("zip")} disabled={isSubmitting} style={inputStyle} />
             </div>
           </div>
 
           <p style={{ margin: 0, fontSize: "0.75rem", color: highContrast ? "#aaa" : SDCB.gray }}>
-            <span aria-hidden="true" style={{ color: highContrast ? "#f88" : "#C53030" }}>*</span>{" "}
-            Required fields
+            {reqMark} Required fields
           </p>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            aria-disabled={isSubmitting}
-            aria-label={isSubmitting ? "Placing your order, please wait" : "Submit shipping information and place order"}
-            style={{
-              ...btnStyle(highContrast, "primary"),
-              marginTop: 4,
-              opacity: isSubmitting ? 0.65 : 1,
-              cursor: isSubmitting ? "not-allowed" : "pointer",
-            }}
-          >
-            {isSubmitting ? "⏳ Placing order…" : "Place Order"}
+          <button type="submit" disabled={isSubmitting} aria-disabled={isSubmitting}
+            aria-label={isSubmitting ? "Calculating tax, please wait" : "Continue to payment"}
+            style={{ ...btnStyle(highContrast, "primary"), marginTop: 4, opacity: isSubmitting ? 0.65 : 1, cursor: isSubmitting ? "not-allowed" : "pointer" }}>
+            {isSubmitting ? "⏳ Calculating tax…" : "Continue to Payment"}
           </button>
         </form>
       </div>
     </>
   );
 }
+// ─────────────────────────────────────────────────────────────────────────────
+// ORDER RESULT MODAL
+// Shown AFTER payment succeeds — while the backend creates the shipping label
+// and sends the email ("processing"), then the final confirmation ("success").
+// ─────────────────────────────────────────────────────────────────────────────
+function OrderResultModal({ status, errorMsg, email, onClose, highContrast }) {
+  const dialogRef = useRef(null);
 
+  useEffect(() => {
+    if (status !== "idle" && dialogRef.current) dialogRef.current.focus();
+  }, [status]);
+
+  if (status === "idle") return null;
+
+  const title = { fontFamily: "'Playfair Display', Georgia, serif", fontSize: "1.4rem", fontWeight: 700, color: highContrast ? SDCB.hcYellow : SDCB.navy, margin: "0 0 0.5rem" };
+  const gray  = { color: highContrast ? SDCB.hcText : SDCB.gray, margin: "0 0 0.5rem", fontSize: "0.95rem" };
+  const dialogStyle = {
+    position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+    zIndex: 1600, width: 460, maxWidth: "95vw", maxHeight: "90vh", overflowY: "auto",
+    background: highContrast ? SDCB.hcBg : SDCB.white,
+    border: highContrast ? `2px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`,
+    borderRadius: 16, padding: "2rem", boxShadow: "0 20px 60px rgba(13,61,110,0.25)",
+    outline: "none", textAlign: "center",
+  };
+
+  return (
+    <>
+      <div aria-hidden="true" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1500 }} />
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Order status" tabIndex={-1} style={dialogStyle}>
+        {status === "processing" && (
+          <div role="status" aria-live="polite" style={{ padding: "1.5rem 0" }}>
+            <p style={{ fontSize: "2.5rem", margin: "0 0 0.75rem" }}>⏳</p>
+            <p style={title}>Finalizing your order…</p>
+            <p style={gray}>Your payment went through. We're preparing your shipment — this only takes a moment.</p>
+          </div>
+        )}
+
+        {status === "success" && (
+          <div role="status" aria-live="polite" style={{ padding: "1.5rem 0" }}>
+            <p style={{ fontSize: "3rem", margin: "0 0 0.75rem" }}>🎉</p>
+            <p style={title}>Order Placed!</p>
+            <p style={gray}>A confirmation email with tracking info has been sent to</p>
+            <p style={{ color: highContrast ? SDCB.hcYellow : SDCB.blue, fontWeight: 700, margin: "0 0 1.25rem" }}>{email}</p>
+            <button onClick={onClose} aria-label="Continue shopping" style={btnStyle(highContrast, "primary")}>
+              Continue Shopping
+            </button>
+          </div>
+        )}
+
+        {status === "error" && (
+          <div role="alert" aria-live="assertive" style={{ padding: "1.5rem 0" }}>
+            <p style={{ fontSize: "2.5rem", margin: "0 0 0.75rem" }}>⚠️</p>
+            <p style={title}>We Hit a Snag</p>
+            <p style={gray}>
+              Your payment was successful, but we couldn't finalize the order: {errorMsg}.
+              Please contact us and we'll sort it out right away — you will not be charged again.
+            </p>
+            <p style={{ ...gray, fontWeight: 700 }}>(619) 583-1542</p>
+            <button onClick={onClose} aria-label="Close" style={btnStyle(highContrast, "secondary")}>Close</button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
 // ─────────────────────────────────────────────────────────────────────────────
 // CART DRAWER
 // ─────────────────────────────────────────────────────────────────────────────
