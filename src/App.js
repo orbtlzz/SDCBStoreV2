@@ -66,120 +66,8 @@ function Announcer({ message }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// PRODUCT DATA
+// PRODUCT DATA — now loaded from the backend (/products) at runtime
 // ─────────────────────────────────────────────────────────────────────────────
-const PRODUCTS = [
-  {
-    id: 1,
-    name: "Talking Atomic Clock",
-    category: "Time",
-    price: 34.99,
-    emoji: "🕐",
-    description:
-      "Announces the time and date aloud at the press of a button. Auto-syncs to atomic time for accuracy. Loud, clear voice with adjustable volume.",
-  },
-  {
-    id: 2,
-    name: "Braille Labeler Kit",
-    category: "Organization",
-    price: 27.5,
-    emoji: "🏷️",
-    description:
-      "Create tactile Braille labels for cans, spice jars, medicine bottles, and more. Comes with 3 label tape rolls and a quick-start guide in large print.",
-  },
-  {
-    id: 3,
-    name: "Talking Kitchen Scale",
-    category: "Cooking",
-    price: 42.0,
-    emoji: "⚖️",
-    description:
-      "Reads weight aloud in grams or ounces. Features a flat, easy-clean surface, large tactile buttons, and clear speech output for confident cooking.",
-  },
-  {
-    id: 4,
-    name: "Talking Thermometer",
-    category: "Cooking",
-    price: 19.99,
-    emoji: "🌡️",
-    description:
-      "Instant-read food thermometer that speaks the temperature in Fahrenheit or Celsius. Long probe, tactile button, and automatic shut-off to save battery.",
-  },
-  {
-    id: 5,
-    name: "Portable Screen Magnifier",
-    category: "Reading",
-    price: 89.0,
-    emoji: "🔍",
-    description:
-      "Handheld electronic magnifier with 4× to 14× zoom and high-contrast color modes. Lightweight and USB-rechargeable for use at home or on the go.",
-  },
-  {
-    id: 6,
-    name: "Talking Blood Pressure Monitor",
-    category: "Health",
-    price: 55.0,
-    emoji: "💓",
-    description:
-      "Reads systolic, diastolic, and pulse values aloud after each measurement. Large arm cuff, simple one-button operation, and memory for 60 readings.",
-  },
-  {
-    id: 7,
-    name: "Folding White Cane",
-    category: "Mobility",
-    price: 24.95,
-    emoji: "🦯",
-    description:
-      "Lightweight aluminum folding cane with a comfortable wrist strap and reflective stripe for night visibility. Folds to 12 inches for easy storage.",
-  },
-  {
-    id: 8,
-    name: "Talking Calculator",
-    category: "Daily Life",
-    price: 18.5,
-    emoji: "🔢",
-    description:
-      "Speaks every key press and result aloud. Large tactile buttons with a raised dot on the 5-key for orientation. Includes earphone jack for private use.",
-  },
-  {
-    id: 9,
-    name: "Large-Print Recipe Book",
-    category: "Cooking",
-    price: 22.0,
-    emoji: "📖",
-    description:
-      "50 simple, healthy recipes printed in 24-point bold font with high-contrast black on cream paper. Lay-flat spiral binding keeps pages open hands-free.",
-  },
-  {
-    id: 10,
-    name: "Braille Playing Cards",
-    category: "Daily Life",
-    price: 12.0,
-    emoji: "🃏",
-    description:
-      "Standard 52-card deck with Braille suit and rank markings alongside printed text. Durable coated cards for long-lasting enjoyment.",
-  },
-  {
-    id: 11,
-    name: "Talking Color Identifier",
-    category: "Daily Life",
-    price: 39.0,
-    emoji: "🎨",
-    description:
-      "Point at any surface and hear its color announced instantly. Identifies 150 colors. Great for matching outfits, checking paint, or sorting laundry.",
-  },
-  {
-    id: 12,
-    name: "Audio Descriptive Earbuds",
-    category: "Mobility",
-    price: 49.0,
-    emoji: "🎧",
-    description:
-      "Bone-conduction earbuds that keep ears open to surrounding sounds while delivering audio descriptions. Comfortable, sweatproof, and rechargeable.",
-  },
-];
-
-const CATEGORIES = ["All", ...new Set(PRODUCTS.map((p) => p.category))];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // AI DESCRIPTION via Claude API
@@ -1292,6 +1180,30 @@ export default function App() {
   const [announcement,     setAnnouncement]    = useState("");
   const [smartPopup,       setSmartPopup]      = useState("");
   const [recommendedItems, setRecommendedItems]= useState([]);
+  // ── Products loaded from backend (Google Sheet) ────────────────────────
+  const [products,        setProducts]        = useState([]);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [productsError,   setProductsError]   = useState("");
+
+  useEffect(() => {
+    fetch(`${process.env.REACT_APP_SERVER_URL}/products`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Server responded ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        setProducts(data);
+        setAnnouncement(`${data.length} products loaded.`);
+      })
+      .catch((err) => {
+        console.error("❌ Failed to load products:", err);
+        setProductsError("Could not load products. Please refresh the page.");
+        setAnnouncement("Could not load products. Please refresh the page.");
+      })
+      .finally(() => setProductsLoading(false));
+  }, []);
+
+  const categories = ["All", ...new Set(products.map((p) => p.category))];
 
   // ── Checkout state ──────────────────────────────────────────────────────
   const [clientSecret,     setClientSecret]    = useState(null);
@@ -1313,7 +1225,7 @@ export default function App() {
         ? prev.map((i) => (i.id === product.id ? { ...i, qty: i.qty + 1 } : i))
         : [...prev, { ...product, qty: 1 }];
 
-      const related = PRODUCTS
+      const related = products
         .filter((p) => p.category === product.category && p.id !== product.id)
         .slice(0, 2);
       setRecommendedItems(related);
@@ -1330,7 +1242,7 @@ export default function App() {
 
       return updatedCart;
     });
-  }, []);
+  }, [products]);
 
   // ── Step 1: PaymentIntent + Stripe modal ───────────────────────────────
   const handleCheckout = useCallback(async () => {
@@ -1441,7 +1353,7 @@ export default function App() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
-  const filtered = PRODUCTS.filter((p) => {
+  const filtered = products.filter((p) => {
     const matchCat    = category === "All" || p.category === category;
     const matchSearch =
       p.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -1583,7 +1495,7 @@ export default function App() {
               Filter by Category
             </legend>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-              {CATEGORIES.map((cat) => (
+              {categories.map((cat) => (
                 <button
                   key={cat}
                   onClick={() => { setCategory(cat); setAnnouncement(`Showing ${cat} products`); }}
@@ -1597,15 +1509,23 @@ export default function App() {
           </fieldset>
         </section>
 
+        {productsError && (
+          <p role="alert" style={{ color: hc ? "#f88" : "#C53030", fontSize: "0.9rem", marginBottom: "1rem", fontWeight: 600 }}>
+            {productsError}
+          </p>
+        )}
+
         <p aria-live="polite" style={{ color: hc ? "#aaa" : SDCB.gray, fontSize: "0.85rem", marginBottom: "1rem" }}>
-          {filtered.length} product{filtered.length !== 1 ? "s" : ""} found
+          {productsLoading
+            ? "Loading products…"
+            : `${filtered.length} product${filtered.length !== 1 ? "s" : ""} found`}
         </p>
 
         <section aria-label="Product listings" className="product-grid" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: "1.25rem" }}>
           {filtered.map((product) => (
             <ProductCard key={product.id} product={product} onAddToCart={addToCart} onAnnounce={setAnnouncement} highContrast={highContrast} />
           ))}
-          {filtered.length === 0 && (
+          {!productsLoading && !productsError && filtered.length === 0 && (
             <p role="status" style={{ color: hc ? SDCB.hcYellow : SDCB.gray, gridColumn: "1/-1", textAlign: "center", padding: "2rem" }}>
               No products match your search. Try a different keyword or category.
             </p>
