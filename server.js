@@ -90,27 +90,56 @@ app.get("/products", async (_req, res) => {
 app.post("/create-payment-intent", async (req, res) => {
   console.log("📥 /create-payment-intent called");
   try {
-    const { cart } = req.body;
+    const { cart, shipping } = req.body;
 
     if (!cart || !Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Invalid or empty cart" });
     }
+    if (!shipping?.address || !shipping?.zip) {
+      return res.status(400).json({ error: "Shipping address required for tax" });
+    }
 
-    const total = cart.reduce(
-      (sum, item) => sum + (item.price || 0) * (item.qty || 1),
-      0
-    );
+    // Line items — amounts in cents; reference must be unique per line
+    const lineItems = cart.map((item) => ({
+      amount: Math.round((item.price || 0) * (item.qty || 1) * 100),
+      reference: String(item.id),
+      quantity: item.qty || 1,
+    }));
 
-    console.log(`💰 Creating PaymentIntent for $${total.toFixed(2)}`);
+    // Calculate tax from the shipping address
+    const calculation = await stripe.tax.calculations.create({
+      currency: "usd",
+      line_items: lineItems,
+      customer_details: {
+        address: {
+          line1: shipping.address,
+          city: shipping.city,
+          state: shipping.state || "CA",
+          postal_code: shipping.zip,
+          country: "US",
+        },
+        address_source: "shipping",
+      },
+    });
 
+    const tax = calculation.tax_amount_exclusive;
+    console.log(`🧾 Tax: $${(tax / 100).toFixed(2)} | Total: $${(calculation.amount_total / 100).toFixed(2)}`);
+
+    // amount_total already includes the tax — charge exactly that
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(total * 100),
+      amount: calculation.amount_total,
       currency: "usd",
       automatic_payment_methods: { enabled: true },
+      metadata: { tax_calculation: calculation.id },
     });
 
     console.log("✅ PaymentIntent created:", paymentIntent.id);
-    res.json({ clientSecret: paymentIntent.client_secret });
+    res.json({
+      clientSecret: paymentIntent.client_secret,
+      subtotal: (calculation.amount_total - tax) / 100,
+      tax: tax / 100,
+      total: calculation.amount_total / 100,
+    });
   } catch (err) {
     console.error("❌ /create-payment-intent error:", err.stack);
     res.status(500).json({ error: err.message });
@@ -275,6 +304,20 @@ app.post("/create-order-after-payment", async (req, res) => {
       return res
         .status(400)
         .json({ error: `Payment not completed. Status: ${paymentIntent.status}` });
+    }
+
+    // Record the tax transaction for reporting
+    const taxCalcId = paymentIntent.metadata?.tax_calculation;
+    if (taxCalcId) {
+      try {
+        await stripe.tax.transactions.createFromCalculation({
+          calculation: taxCalcId,
+          reference: paymentIntentId,
+        });
+        console.log("🧾 Tax transaction recorded");
+      } catch (taxErr) {
+        console.error("❌ Tax transaction failed (non-fatal):", taxErr.message);
+      }
     }
 
     // ── Create Shippo label ──────────────────────────────────────────
