@@ -327,7 +327,7 @@ function ProductCard({ product, onAddToCart, onAnnounce, highContrast }) {
 // FIX: capture result.paymentIntent.id and hand it to parent via
 // onPaymentComplete(id). Parent opens the ShippingModal next.
 // ─────────────────────────────────────────────────────────────────────────────
-function CheckoutForm({ total, onPaymentComplete, onCancel, highContrast, onAnnounce }) {
+function CheckoutForm({ total, taxInfo, onPaymentComplete, onCancel, highContrast, onAnnounce }) {
   const stripe    = useStripe();
   const elements  = useElements();
   const errorRef  = useRef(null);
@@ -486,17 +486,37 @@ function CheckoutForm({ total, onPaymentComplete, onCancel, highContrast, onAnno
           borderRadius: 8,
           padding: "0.75rem 1rem",
           display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
+          flexDirection: "column",
+          gap: "0.4rem",
         }}
-        aria-label={`Order total: $${total.toFixed(2)}`}
       >
-        <span style={{ color: highContrast ? SDCB.hcText : SDCB.gray, fontSize: "0.9rem" }}>
-          Order total
-        </span>
-        <span style={{ fontWeight: 700, fontSize: "1.1rem", color: highContrast ? SDCB.hcYellow : SDCB.navy }}>
-          ${total.toFixed(2)}
-        </span>
+        {taxInfo && (
+          <>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: highContrast ? SDCB.hcText : SDCB.gray }}>
+              <span>Subtotal</span>
+              <span>${taxInfo.subtotal.toFixed(2)}</span>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: highContrast ? SDCB.hcText : SDCB.gray }}>
+              <span>Sales tax</span>
+              <span>${taxInfo.tax.toFixed(2)}</span>
+            </div>
+          </>
+        )}
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            fontWeight: 700,
+            fontSize: "1.1rem",
+            color: highContrast ? SDCB.hcYellow : SDCB.navy,
+            borderTop: taxInfo ? `1px solid ${highContrast ? "#444" : SDCB.lightGray}` : "none",
+            paddingTop: taxInfo ? "0.4rem" : 0,
+          }}
+          aria-label={`Order total: $${total.toFixed(2)}`}
+        >
+          <span>Total</span>
+          <span>${total.toFixed(2)}</span>
+        </div>
       </div>
 
       <PaymentElement id="payment-element" options={{ layout: "tabs" }} />
@@ -554,6 +574,7 @@ function CheckoutForm({ total, onPaymentComplete, onCancel, highContrast, onAnno
 function CheckoutModal({
   clientSecret,
   cart,
+  taxInfo,
   open,
   onClose,
   onPaymentComplete,
@@ -561,7 +582,9 @@ function CheckoutModal({
   onAnnounce,
 }) {
   const dialogRef  = useRef(null);
-  const total      = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const total      = taxInfo
+    ? taxInfo.total
+    : cart.reduce((s, i) => s + i.price * i.qty, 0);
 
   console.log("🟡 CheckoutModal render:", {
     open,
@@ -664,6 +687,7 @@ function CheckoutModal({
         <Elements stripe={stripePromise} options={elementsOptions}>
           <CheckoutForm
             total={total}
+            taxInfo={taxInfo}
             onPaymentComplete={onPaymentComplete}
             onCancel={onClose}
             highContrast={highContrast}
@@ -1108,16 +1132,14 @@ export default function App() {
 
   const categories = ["All", ...new Set(products.map((p) => p.category))];
 
-  // ── Checkout state ──────────────────────────────────────────────────────
-  const [clientSecret,     setClientSecret]    = useState(null);
-  const [checkoutOpen,     setCheckoutOpen]    = useState(false);
-  const [checkoutLoading,  setCheckoutLoading] = useState(false);
-  const [checkoutError,    setCheckoutError]   = useState("");
-
-  // ── Shipping modal state (NEW) ─────────────────────────────────────────
-  const [paymentIntentId,  setPaymentIntentId] = useState(null);
-  const [shippingOpen,     setShippingOpen]    = useState(false);
-
+  // ── Checkout flow state ─────────────────────────────────────────────────
+  const [shipping,     setShipping]     = useState(null);   // address collected up front
+  const [shippingOpen, setShippingOpen] = useState(false);  // address modal open?
+  const [clientSecret, setClientSecret] = useState(null);
+  const [taxInfo,      setTaxInfo]      = useState(null);    // { subtotal, tax, total }
+  const [checkoutOpen, setCheckoutOpen] = useState(false);   // payment modal open?
+  const [orderStatus,  setOrderStatus]  = useState("idle");  // idle | processing | success | error
+  const [orderError,   setOrderError]   = useState("");
   const mainRef   = useRef(null);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
@@ -1147,75 +1169,74 @@ export default function App() {
     });
   }, [products]);
 
-  // ── Step 1: PaymentIntent + Stripe modal ───────────────────────────────
-  const handleCheckout = useCallback(async () => {
-    setCheckoutLoading(true);
-    setCheckoutError("");
-    setAnnouncement("Loading secure payment form. Please wait.");
-
-    try {
-      const res = await fetch(
-        `${process.env.REACT_APP_SERVER_URL}/create-payment-intent`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cart }),
-        }
-      );
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || "Server error. Please try again.");
-
-      setClientSecret(data.clientSecret);
-      setCartOpen(false);
-      setCheckoutOpen(true);
-      setAnnouncement("Payment form is ready. Please enter your payment details.");
-    } catch (err) {
-      setCheckoutError(err.message);
-      setAnnouncement(`Could not load payment form: ${err.message}`);
-    } finally {
-      setCheckoutLoading(false);
-    }
-  }, [cart]);
-
-  // ── Step 2: Stripe confirmed → store id, open ShippingModal ────────────
-  const handlePaymentComplete = useCallback((id) => {
-    console.log("🟢 [App] Payment completed:", id);
-  
-    if (!id) {
-      console.error("❌ Missing paymentIntentId");
-      return;
-    }
-  
-    // Store payment ID FIRST
-    setPaymentIntentId(id);
-  
-    // Close Stripe modal
-    setCheckoutOpen(false);
-  
-    // Delay next modal slightly
-    setTimeout(() => {
-      console.log("🟢 Opening shipping modal");
-  
-      setShippingOpen(true);
-  
-      setAnnouncement(
-        "Payment confirmed! Please enter your shipping details."
-      );
-  
-      // cleanup AFTER modal opens
-      setClientSecret(null);
-  
-    }, 150);
-  
+  // ── Step 1: open the shipping address modal ────────────────────────────
+  const handleCheckout = useCallback(() => {
+    setCartOpen(false);
+    setShippingOpen(true);
+    setAnnouncement("Please enter your shipping address to continue.");
   }, []);
-  // ── Step 3: Backend order success → reset everything ───────────────────
-  const handleShippingSuccess = useCallback(() => {
+
+  // ── Step 2: address submitted → tax calculated → open payment modal ────
+  const handleAddressReady = useCallback((shippingData, paymentData) => {
+    setShipping(shippingData);
+    setClientSecret(paymentData.clientSecret);
+    setTaxInfo({
+      subtotal: paymentData.subtotal,
+      tax:      paymentData.tax,
+      total:    paymentData.total,
+    });
     setShippingOpen(false);
-    setPaymentIntentId(null);
+    setCheckoutOpen(true);
+    setAnnouncement("Payment form is ready. Please enter your payment details.");
+  }, []);
+
+  // ── Step 3: payment confirmed → create the order on the backend ────────
+  const handlePaymentComplete = useCallback(
+    async (paymentIntentId) => {
+      if (!paymentIntentId) {
+        console.error("❌ Missing paymentIntentId");
+        return;
+      }
+      setCheckoutOpen(false);
+      setClientSecret(null);
+      setOrderStatus("processing");
+      setAnnouncement("Payment successful. Finalizing your order, please wait.");
+
+      try {
+        const res = await fetch(
+          `${process.env.REACT_APP_SERVER_URL}/create-order-after-payment`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ shipping, paymentIntentId }),
+          }
+        );
+        const data = await res.json();
+        if (!res.ok || data.error) {
+          throw new Error(data.error || `Server responded ${res.status}`);
+        }
+        console.log("✅ Order created. Tracking:", data.trackingNumber);
+        setOrderStatus("success");
+        setAnnouncement(
+          `Order confirmed! A confirmation email has been sent to ${shipping?.email || "you"}.`
+        );
+      } catch (err) {
+        console.error("❌ Order creation failed:", err);
+        setOrderStatus("error");
+        setOrderError(err.message);
+        setAnnouncement(`Order error: ${err.message}`);
+      }
+    },
+    [shipping]
+  );
+  // ── Step 4: user dismisses the confirmation → reset for next order ─────
+  const handleOrderDone = useCallback(() => {
+    setOrderStatus("idle");
+    setOrderError("");
+    setShipping(null);
+    setTaxInfo(null);
     setCart([]);
-    setAnnouncement(
-      "Order placed! A confirmation email with tracking info has been sent to you."
-    );
+    setAnnouncement("Thank you! You can keep browsing the store.");
   }, []);
 
   const handleCheckoutClose = useCallback(() => {
@@ -1235,16 +1256,15 @@ export default function App() {
     if (!secret) return;
 
     if (status === "succeeded" && id) {
-      // Payment returned via redirect — jump straight to shipping
-      setPaymentIntentId(id);
-      setShippingOpen(true);
-      setAnnouncement("Payment confirmed! Please enter your shipping details.");
+      // Page reloaded after a redirect — finalize the order. The backend
+      // recovers the shipping address from the PaymentIntent metadata.
+      handlePaymentComplete(id);
     } else if (status === "requires_payment_method") {
       setAnnouncement("Payment was not completed. Please try again.");
     }
 
     window.history.replaceState({}, "", window.location.pathname);
-  }, []);
+  }, [handlePaymentComplete]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -1458,16 +1478,26 @@ export default function App() {
         open={cartOpen}
         onClose={() => { setCartOpen(false); setAnnouncement("Cart closed"); }}
         onCheckout={handleCheckout}
-        checkoutLoading={checkoutLoading}
-        checkoutError={checkoutError}
+        checkoutLoading={false}
+        checkoutError=""
         highContrast={highContrast}
         onAnnounce={setAnnouncement}
       />
 
-      {/* Step 2: Stripe payment modal */}
+      {/* Step 2: Shipping address — collects address, calculates tax */}
+      <ShippingModal
+        open={shippingOpen}
+        cart={cart}
+        onReady={handleAddressReady}
+        onAnnounce={setAnnouncement}
+        highContrast={highContrast}
+      />
+
+      {/* Step 3: Stripe payment modal — shows the tax-inclusive total */}
       <CheckoutModal
         clientSecret={clientSecret}
         cart={cart}
+        taxInfo={taxInfo}
         open={checkoutOpen}
         onClose={handleCheckoutClose}
         onPaymentComplete={handlePaymentComplete}
@@ -1475,12 +1505,12 @@ export default function App() {
         onAnnounce={setAnnouncement}
       />
 
-      {/* Step 3: Shipping modal (NEW) — opens after payment */}
-      <ShippingModal
-        open={shippingOpen}
-        paymentIntentId={paymentIntentId}
-        onSuccess={handleShippingSuccess}
-        onAnnounce={setAnnouncement}
+      {/* Step 4: Order result — processing → confirmation */}
+      <OrderResultModal
+        status={orderStatus}
+        errorMsg={orderError}
+        email={shipping?.email}
+        onClose={handleOrderDone}
         highContrast={highContrast}
       />
     </>
