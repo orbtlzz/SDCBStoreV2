@@ -100,11 +100,15 @@ app.post("/create-payment-intent", async (req, res) => {
     }
 
     // Line items — amounts in cents; reference must be unique per line
-    const lineItems = cart.map((item) => ({
-      amount: Math.round((item.price || 0) * (item.qty || 1) * 100),
-      reference: String(item.id),
-      quantity: item.qty || 1,
-    }));
+    const lineItems = cart.map((item) => {
+      const line = {
+        amount: Math.round((item.price || 0) * (item.qty || 1) * 100),
+        reference: String(item.id),
+        quantity: item.qty || 1,
+      };
+      if (item.taxCode) line.tax_code = String(item.taxCode).trim();
+      return line;
+    });
 
     // Calculate tax from the shipping address
     const calculation = await stripe.tax.calculations.create({
