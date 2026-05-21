@@ -270,7 +270,7 @@ function FeaturedCarousel({ products, onAddToCart, onAnnounce, highContrast }) {
                   aria-hidden="true"
                   style={{
                     display: "block", height: 8, borderRadius: 4,
-                    background: i <= safe
+                    background: i === safe
                       ? (hc ? SDCB.hcYellow : SDCB.blue)
                       : (hc ? "#444" : SDCB.lightGray),
                   }}
