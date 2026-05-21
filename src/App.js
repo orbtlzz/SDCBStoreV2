@@ -163,27 +163,13 @@ function CartBadge({ count }) {
 // ─────────────────────────────────────────────────────────────────────────────
 function ProductCard({ product, onAddToCart, onAnnounce, highContrast }) {
   const [aiDesc, setAiDesc] = useState(null);
-  const [loadingAI, setLoadingAI] = useState(false);
   const [added, setAdded] = useState(false);
   const addBtnRef = useRef(null);
 
-  const handleAIDesc = useCallback(async () => {
-    if (aiDesc) {
-      onAnnounce(`AI description already available for ${product.name}`);
-      return;
-    }
-    setLoadingAI(true);
-    onAnnounce(`Generating AI description for ${product.name}`);
-    try {
-      const desc = await fetchAIDescription(product);
-      setAiDesc(desc);
-      onAnnounce(`AI description ready for ${product.name}`);
-    } catch {
-      onAnnounce("Could not load AI description. Please try again.");
-    } finally {
-      setLoadingAI(false);
-    }
-  }, [product, aiDesc, onAnnounce]);
+  const handleAIDesc = useCallback(() => {
+    setAiDesc(product.aiDescription);
+    onAnnounce(`Showing the detailed description for ${product.name}`);
+  }, [product, onAnnounce]);
 
   const handleAdd = () => {
     onAddToCart(product);
@@ -325,14 +311,15 @@ function ProductCard({ product, onAddToCart, onAnnounce, highContrast }) {
         ${product.price.toFixed(2)}
       </p>
 
-      <button
-        onClick={handleAIDesc}
-        disabled={loadingAI}
-        style={btnStyle(highContrast, "secondary")}
-        aria-label={`Get AI description for ${product.name}`}
-      >
-        {loadingAI ? "⏳ Loading…" : "✦ AI Visual Description"}
-      </button>
+      {product.aiDescription && !aiDesc && (
+        <button
+          onClick={handleAIDesc}
+          style={btnStyle(highContrast, "secondary")}
+          aria-label={`Show the detailed visual description for ${product.name}`}
+        >
+          ✦ AI Visual Description
+        </button>
+      )}
 
       <button
         ref={addBtnRef}
