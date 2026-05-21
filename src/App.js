@@ -1096,6 +1096,17 @@ function CartDrawer({ cart, open, onClose, onCheckout, checkoutLoading, checkout
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// CATEGORY HELPER — a product's category cell may list several categories,
+// e.g. "Time, Magnifiers". Split it into a clean array.
+// ─────────────────────────────────────────────────────────────────────────────
+function catList(product) {
+  return (product.category || "")
+    .split(",")
+    .map((c) => c.trim())
+    .filter(Boolean);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -1130,7 +1141,7 @@ export default function App() {
       .finally(() => setProductsLoading(false));
   }, []);
 
-  const categories = ["All", ...new Set(products.map((p) => p.category))];
+  const categories = ["All", ...new Set(products.flatMap(catList))];
 
   // ── Checkout flow state ─────────────────────────────────────────────────
   const [shipping,     setShipping]     = useState(null);   // address collected up front
@@ -1150,8 +1161,9 @@ export default function App() {
         ? prev.map((i) => (i.id === product.id ? { ...i, qty: i.qty + 1 } : i))
         : [...prev, { ...product, qty: 1 }];
 
+      const productCats = catList(product);
       const related = products
-        .filter((p) => p.category === product.category && p.id !== product.id)
+        .filter((p) => p.id !== product.id && catList(p).some((c) => productCats.includes(c)))
         .slice(0, 2);
       setRecommendedItems(related);
 
@@ -1277,7 +1289,7 @@ export default function App() {
   }, []);
 
   const filtered = products.filter((p) => {
-    const matchCat    = category === "All" || p.category === category;
+    const matchCat    = category === "All" || catList(p).includes(category);
     const matchSearch =
       p.name.toLowerCase().includes(search.toLowerCase()) ||
       p.description.toLowerCase().includes(search.toLowerCase());
