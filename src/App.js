@@ -1006,7 +1006,7 @@ function OrderResultModal({ status, errorMsg, email, onClose, highContrast }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CART DRAWER
 // ─────────────────────────────────────────────────────────────────────────────
-function CartDrawer({ cart, open, onClose, onCheckout, checkoutLoading, checkoutError, highContrast, onAnnounce }) {
+function CartDrawer({ cart, open, onClose, onCheckout, updateQty, removeFromCart, checkoutLoading, checkoutError, highContrast, onAnnounce }) {
   const closeRef = useRef(null);
 
   useEffect(() => {
@@ -1059,26 +1059,79 @@ function CartDrawer({ cart, open, onClose, onCheckout, checkoutLoading, checkout
         </p>
       ) : (
         <>
-          {cart.map((item) => (
-            <div
-              key={item.id}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                padding: "0.7rem 0",
-                borderBottom: highContrast ? `1px solid ${SDCB.hcYellow}` : `1px solid ${SDCB.lightGray}`,
-              }}
-            >
-              <span style={{ color: highContrast ? SDCB.hcText : SDCB.navy, fontSize: "0.9rem", flex: 1 }}>
-                {item.name}{" "}
-                <span style={{ color: highContrast ? SDCB.hcYellow : SDCB.skyMid }}>×{item.qty}</span>
-              </span>
-              <span style={{ fontWeight: 700, color: highContrast ? SDCB.hcYellow : SDCB.blue, marginLeft: 12 }}>
-                ${(item.price * item.qty).toFixed(2)}
-              </span>
-            </div>
-          ))}
+          {cart.map((item) => {
+            const dec = () => {
+              updateQty(item.id, -1);
+              onAnnounce(`Decreased ${item.name} to ${item.qty - 1}`);
+            };
+            const inc = () => {
+              updateQty(item.id, 1);
+              onAnnounce(`Increased ${item.name} to ${item.qty + 1}`);
+            };
+            const remove = () => {
+              removeFromCart(item.id);
+              onAnnounce(`Removed ${item.name} from cart`);
+            };
+            const stepBtn = {
+              width: 30, height: 30, borderRadius: 6,
+              border: highContrast ? `1.5px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`,
+              background: highContrast ? "#222" : SDCB.skyLight,
+              color: highContrast ? SDCB.hcYellow : SDCB.navy,
+              fontSize: "1.1rem", fontWeight: 700, fontFamily: "inherit", lineHeight: 1,
+            };
+            return (
+              <div
+                key={item.id}
+                style={{
+                  padding: "0.8rem 0",
+                  borderBottom: highContrast ? `1px solid ${SDCB.hcYellow}` : `1px solid ${SDCB.lightGray}`,
+                  display: "flex", flexDirection: "column", gap: "0.55rem",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <span style={{ color: highContrast ? SDCB.hcText : SDCB.navy, fontSize: "0.92rem", fontWeight: 600, flex: 1 }}>
+                    {item.name}
+                  </span>
+                  <button
+                    onClick={remove}
+                    aria-label={`Remove ${item.name} from cart`}
+                    style={{ background: "none", border: "none", color: highContrast ? "#f88" : "#C53030", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", padding: "2px 4px" }}
+                  >
+                    ✕ Remove
+                  </button>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div role="group" aria-label={`Quantity controls for ${item.name}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <button
+                      onClick={dec}
+                      disabled={item.qty <= 1}
+                      aria-label={`Decrease quantity of ${item.name}`}
+                      style={{ ...stepBtn, opacity: item.qty <= 1 ? 0.4 : 1, cursor: item.qty <= 1 ? "not-allowed" : "pointer" }}
+                    >
+                      −
+                    </button>
+                    <span
+                      aria-label={`Quantity: ${item.qty}`}
+                      style={{ minWidth: 24, textAlign: "center", fontWeight: 700, color: highContrast ? SDCB.hcYellow : SDCB.navy }}
+                    >
+                      {item.qty}
+                    </span>
+                    <button
+                      onClick={inc}
+                      aria-label={`Increase quantity of ${item.name}`}
+                      style={{ ...stepBtn, cursor: "pointer" }}
+                    >
+                      +
+                    </button>
+                  </div>
+                  <span style={{ fontWeight: 700, color: highContrast ? SDCB.hcYellow : SDCB.blue }}>
+                    ${(item.price * item.qty).toFixed(2)}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
 
           <div
             style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: "1.1rem", color: highContrast ? SDCB.hcYellow : SDCB.navy, paddingTop: "0.5rem" }}
@@ -1210,6 +1263,18 @@ export default function App() {
       return updatedCart;
     });
   }, [products]);
+  
+  const updateQty = useCallback((id, delta) => {
+    setCart((prev) =>
+      prev
+        .map((item) => (item.id === id ? { ...item, qty: item.qty + delta } : item))
+        .filter((item) => item.qty > 0)
+    );
+  }, []);
+
+  const removeFromCart = useCallback((id) => {
+    setCart((prev) => prev.filter((item) => item.id !== id));
+  }, []);
 
   // ── Step 1: open the shipping address modal ────────────────────────────
   const handleCheckout = useCallback(() => {
@@ -1520,6 +1585,8 @@ export default function App() {
         open={cartOpen}
         onClose={() => { setCartOpen(false); setAnnouncement("Cart closed"); }}
         onCheckout={handleCheckout}
+        updateQty={updateQty}
+        removeFromCart={removeFromCart}
         checkoutLoading={false}
         checkoutError=""
         highContrast={highContrast}
