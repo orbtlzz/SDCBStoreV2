@@ -159,6 +159,136 @@ function CartBadge({ count }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// FEATURED CAROUSEL
+// Manually-controlled showcase of products marked `featured` in the sheet.
+// No auto-rotation — the user drives it.
+// ─────────────────────────────────────────────────────────────────────────────
+function FeaturedCarousel({ products, onAddToCart, onAnnounce, highContrast }) {
+  const [index, setIndex] = useState(0);
+  const featured = products.filter(
+    (p) => String(p.featured).toLowerCase() === "true"
+  );
+
+  if (featured.length === 0) return null;
+
+  const hc   = highContrast;
+  const safe = index % featured.length;
+  const item = featured[safe];
+
+  const go = (n) => {
+    const next = ((n % featured.length) + featured.length) % featured.length;
+    setIndex(next);
+    onAnnounce(`Featured product ${next + 1} of ${featured.length}: ${featured[next].name}`);
+  };
+
+  const navBtn = {
+    background: hc ? "#222" : SDCB.white,
+    color: hc ? SDCB.hcYellow : SDCB.navy,
+    border: hc ? `1.5px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`,
+    borderRadius: 8, padding: "0.45rem 0.9rem", fontWeight: 700,
+    fontSize: "0.85rem", cursor: "pointer", fontFamily: "inherit",
+  };
+
+  return (
+    <section
+      aria-label="Featured products"
+      style={{
+        marginBottom: "1.75rem",
+        background: hc ? "#111" : SDCB.white,
+        border: hc ? `2px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`,
+        borderRadius: 14, padding: "1.25rem 1.4rem",
+        boxShadow: hc ? "none" : "0 4px 16px rgba(27,117,187,0.08)",
+      }}
+    >
+      <p style={{ margin: "0 0 0.9rem", fontSize: "0.72rem", letterSpacing: "0.14em", textTransform: "uppercase", fontWeight: 700, color: hc ? SDCB.hcYellow : SDCB.skyMid }}>
+        ★ Featured Products
+      </p>
+
+      <div
+        role="group"
+        aria-label={`Featured product ${safe + 1} of ${featured.length}`}
+        style={{ display: "flex", gap: "1.4rem", flexWrap: "wrap", alignItems: "center" }}
+      >
+        {item.image ? (
+          <img
+            src={item.image}
+            alt=""
+            aria-hidden="true"
+            style={{ width: 200, height: 160, objectFit: "contain", borderRadius: 10, background: hc ? "#000" : SDCB.offWhite, flexShrink: 0 }}
+          />
+        ) : (
+          <div
+            aria-hidden="true"
+            style={{ width: 200, height: 160, borderRadius: 10, background: hc ? "#000" : SDCB.skyLight, display: "flex", alignItems: "center", justifyContent: "center", color: hc ? SDCB.hcYellow : SDCB.skyMid, fontSize: "3rem", fontWeight: 700, fontFamily: "'Playfair Display', Georgia, serif", flexShrink: 0 }}
+          >
+            {item.name ? item.name.charAt(0).toUpperCase() : "?"}
+          </div>
+        )}
+
+        <div style={{ flex: 1, minWidth: 220, display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+          <span
+            aria-hidden="true"
+            style={{ alignSelf: "flex-start", background: hc ? SDCB.hcYellow : SDCB.skyLight, color: hc ? SDCB.hcBg : SDCB.blue, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", borderRadius: 20, padding: "2px 10px" }}
+          >
+            {item.category}
+          </span>
+          <p style={{ margin: 0, fontFamily: "'Playfair Display', Georgia, serif", fontSize: "1.4rem", fontWeight: 700, color: hc ? SDCB.hcYellow : SDCB.navy, lineHeight: 1.25 }}>
+            {item.name}
+          </p>
+          <p style={{ margin: 0, fontSize: "0.9rem", color: hc ? SDCB.hcText : SDCB.gray, lineHeight: 1.55 }}>
+            {item.description}
+          </p>
+          <p style={{ margin: "0.15rem 0 0", fontSize: "1.3rem", fontWeight: 700, color: hc ? SDCB.hcYellow : SDCB.blue, fontFamily: "'Playfair Display', Georgia, serif" }}>
+            ${item.price.toFixed(2)}
+          </p>
+          <button
+            onClick={() => { onAddToCart(item); onAnnounce(`${item.name} added to cart`); }}
+            aria-label={`Add ${item.name} to cart, $${item.price.toFixed(2)}`}
+            style={{ ...btnStyle(hc, "primary"), width: "auto", alignSelf: "flex-start", padding: "0.55rem 1.4rem", marginTop: "0.2rem" }}
+          >
+            Add to Cart
+          </button>
+        </div>
+      </div>
+
+      {featured.length > 1 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "0.8rem", marginTop: "1.1rem", flexWrap: "wrap" }}>
+          <button onClick={() => go(safe - 1)} aria-label="Previous featured product" style={navBtn}>
+            ◀ Prev
+          </button>
+
+          <div role="group" aria-label="Featured product progress" style={{ display: "flex", gap: 5, flex: 1, minWidth: 120 }}>
+            {featured.map((f, i) => (
+              <button
+                key={f.id}
+                onClick={() => go(i)}
+                aria-label={`Go to featured product ${i + 1}: ${f.name}`}
+                aria-current={i === safe ? "true" : undefined}
+                style={{ flex: 1, background: "none", border: "none", cursor: "pointer", padding: "8px 0" }}
+              >
+                <span
+                  aria-hidden="true"
+                  style={{
+                    display: "block", height: 8, borderRadius: 4,
+                    background: i <= safe
+                      ? (hc ? SDCB.hcYellow : SDCB.blue)
+                      : (hc ? "#444" : SDCB.lightGray),
+                  }}
+                />
+              </button>
+            ))}
+          </div>
+
+          <button onClick={() => go(safe + 1)} aria-label="Next featured product" style={navBtn}>
+            Next ▶
+          </button>
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // PRODUCT CARD
 // ─────────────────────────────────────────────────────────────────────────────
 function ProductCard({ product, onAddToCart, onAnnounce, highContrast }) {
@@ -1538,7 +1668,14 @@ export default function App() {
             </div>
           </fieldset>
         </section>
-
+                
+        <FeaturedCarousel
+          products={products}
+          onAddToCart={addToCart}
+          onAnnounce={setAnnouncement}
+          highContrast={highContrast}
+        />
+          
         {productsError && (
           <p role="alert" style={{ color: hc ? "#f88" : "#C53030", fontSize: "0.9rem", marginBottom: "1rem", fontWeight: 600 }}>
             {productsError}
