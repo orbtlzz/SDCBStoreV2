@@ -219,9 +219,39 @@ function ProductCard({ product, onAddToCart, onAnnounce, highContrast }) {
         }
       }}
     >
-      <div aria-hidden="true" style={{ fontSize: 40, lineHeight: 1, textAlign: "center" }}>
-        {product.emoji}
-      </div>
+      {product.image ? (
+        <img
+          src={product.image}
+          alt=""
+          aria-hidden="true"
+          style={{
+            width: "100%",
+            height: 170,
+            objectFit: "contain",
+            borderRadius: 8,
+            background: highContrast ? "#111" : SDCB.offWhite,
+          }}
+        />
+      ) : (
+        <div
+          aria-hidden="true"
+          style={{
+            width: "100%",
+            height: 170,
+            borderRadius: 8,
+            background: highContrast ? "#111" : SDCB.skyLight,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: highContrast ? SDCB.hcYellow : SDCB.skyMid,
+            fontSize: "2.5rem",
+            fontWeight: 700,
+            fontFamily: "'Playfair Display', Georgia, serif",
+          }}
+        >
+          {product.name ? product.name.charAt(0).toUpperCase() : "?"}
+        </div>
+      )}
 
       <span
         aria-hidden="true"
@@ -1041,7 +1071,7 @@ function CartDrawer({ cart, open, onClose, onCheckout, checkoutLoading, checkout
               }}
             >
               <span style={{ color: highContrast ? SDCB.hcText : SDCB.navy, fontSize: "0.9rem", flex: 1 }}>
-                {item.emoji} {item.name}{" "}
+                {item.name}{" "}
                 <span style={{ color: highContrast ? SDCB.hcYellow : SDCB.skyMid }}>×{item.qty}</span>
               </span>
               <span style={{ fontWeight: 700, color: highContrast ? SDCB.hcYellow : SDCB.blue, marginLeft: 12 }}>
@@ -1399,7 +1429,7 @@ export default function App() {
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {recommendedItems.map((item) => (
                   <button key={item.id} onClick={() => addToCart(item)} style={{ background: hc ? SDCB.hcYellow : SDCB.skyLight, color: hc ? SDCB.hcBg : SDCB.navy, border: "none", borderRadius: 999, padding: "0.4rem 0.7rem", fontSize: "0.75rem", fontWeight: 700, cursor: "pointer" }}>
-                    {item.emoji} {item.name}
+                    {item.name}
                   </button>
                 ))}
               </div>
