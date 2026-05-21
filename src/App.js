@@ -311,14 +311,27 @@ function ProductCard({ product, onAddToCart, onAnnounce, highContrast }) {
         ${product.price.toFixed(2)}
       </p>
 
-      {product.aiDescription && !aiDesc && (
-        <button
-          onClick={handleAIDesc}
-          style={btnStyle(highContrast, "secondary")}
-          aria-label={`Show the detailed visual description for ${product.name}`}
-        >
-          ✦ AI Visual Description
-        </button>
+      {product.aiDescription && (
+        aiDesc ? (
+          <button
+            onClick={() => {
+              setAiDesc(null);
+              onAnnounce(`Showing the basic description for ${product.name}`);
+            }}
+            style={btnStyle(highContrast, "secondary")}
+            aria-label={`Show the basic description for ${product.name}`}
+          >
+            ← Basic Description
+          </button>
+        ) : (
+          <button
+            onClick={handleAIDesc}
+            style={btnStyle(highContrast, "secondary")}
+            aria-label={`Show the detailed visual description for ${product.name}`}
+          >
+            ✦ AI Visual Description
+          </button>
+        )
       )}
 
       <button
