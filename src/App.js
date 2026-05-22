@@ -495,6 +495,7 @@ function CheckoutForm({ total, taxInfo, onPaymentComplete, onCancel, highContras
   const [status,   setStatus]   = useState("idle"); // idle | submitting | error
   const [errorMsg, setErrorMsg] = useState("");
   const [coverFee, setCoverFee] = useState(false);
+  const [discountCode, setDiscountCode] = useState("");
 
   useEffect(() => {
     if (status === "error" && errorRef.current) errorRef.current.focus();
@@ -657,12 +658,12 @@ function CheckoutForm({ total, taxInfo, onPaymentComplete, onCancel, highContras
               <span>Subtotal</span>
               <span>${taxInfo.subtotal.toFixed(2)}</span>
             </div>
-            {taxInfo.shipping > 0 && (
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: highContrast ? SDCB.hcText : SDCB.gray }}>
-                <span>Shipping</span>
-                <span>${taxInfo.shipping.toFixed(2)}</span>
-              </div>
-            )}
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: highContrast ? SDCB.hcText : SDCB.gray }}>
+              <span>Shipping</span>
+              <span style={{ fontWeight: taxInfo.shipping > 0 ? 400 : 700, color: taxInfo.shipping > 0 ? "inherit" : (highContrast ? SDCB.hcYellow : "#2A7D4A") }}>
+                {taxInfo.shipping > 0 ? `$${taxInfo.shipping.toFixed(2)}` : "FREE"}
+              </span>
+            </div>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: highContrast ? SDCB.hcText : SDCB.gray }}>
               <span>Sales tax</span>
               <span>${taxInfo.tax.toFixed(2)}</span>
@@ -896,6 +897,7 @@ function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
       setStatus("idle");
       setErrorMsg("");
       setCoverFee(false);
+      setDiscountCode("");
       setTimeout(() => firstRef.current?.focus(), 50);
     }
   }, [open]);
@@ -959,7 +961,7 @@ function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cart, shipping, coverFee }),
+          body: JSON.stringify({ cart, shipping, coverFee, discountCode }),
         }
       );
       const data = await res.json();
@@ -1072,6 +1074,22 @@ function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
           <p style={{ margin: 0, fontSize: "0.75rem", color: highContrast ? "#aaa" : SDCB.gray }}>
             {reqMark} Required fields
           </p>
+
+          <div>
+            <label htmlFor="discount-code" style={labelStyle}>
+              Discount Code{" "}
+              <span style={{ fontWeight: 400, color: highContrast ? "#aaa" : SDCB.gray }}>(optional)</span>
+            </label>
+            <input
+              id="discount-code"
+              type="text"
+              value={discountCode}
+              onChange={(e) => setDiscountCode(e.target.value)}
+              disabled={isSubmitting}
+              placeholder="In-store pickup code, if you have one"
+              style={inputStyle}
+            />
+          </div>
 
           <label
             style={{
