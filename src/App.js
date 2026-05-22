@@ -494,8 +494,6 @@ function CheckoutForm({ total, taxInfo, onPaymentComplete, onCancel, highContras
 
   const [status,   setStatus]   = useState("idle"); // idle | submitting | error
   const [errorMsg, setErrorMsg] = useState("");
-  const [coverFee, setCoverFee] = useState(false);
-  const [discountCode, setDiscountCode] = useState("");
 
   useEffect(() => {
     if (status === "error" && errorRef.current) errorRef.current.focus();
@@ -890,6 +888,7 @@ function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
   const [status,   setStatus]   = useState("idle"); // idle | submitting | error
   const [errorMsg, setErrorMsg] = useState("");
   const [coverFee, setCoverFee] = useState(false);
+  const [discountCode, setDiscountCode] = useState("");
 
   useEffect(() => {
     if (open) {
