@@ -15,6 +15,10 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // flat shipping fee charged to the customer (USD)
 const SHIPPING_FEE = 9.00;
 
+// Stripe processing fee — only applied when the customer opts in at checkout
+const STRIPE_PCT  = 0.029;
+const STRIPE_FLAT = 0.30;
+
 // ─────────────────────────────────────────────────────
 // CORS  (registered BEFORE routes and express.json)
 // ─────────────────────────────────────────────────────
@@ -93,7 +97,7 @@ app.get("/products", async (_req, res) => {
 app.post("/create-payment-intent", async (req, res) => {
   console.log("📥 /create-payment-intent called");
   try {
-    const { cart, shipping } = req.body;
+    const { cart, shipping, coverFee } = req.body;
 
     if (!cart || !Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Invalid or empty cart" });
@@ -130,18 +134,26 @@ app.post("/create-payment-intent", async (req, res) => {
       },
     });
 
-    const tax         = calculation.tax_amount_exclusive;             // cents (items + shipping tax)
+    const tax         = calculation.tax_amount_exclusive;             // cents
     const shippingAmt = calculation.shipping_cost.amount;             // cents
     const itemsAmt    = calculation.amount_total - tax - shippingAmt; // cents
+    const preFeeTotal = calculation.amount_total;                     // cents
+
+    // If the customer opted in, gross up so they cover Stripe's 2.9% + $0.30 fee.
+    let chargeTotal   = preFeeTotal;
+    let processingFee = 0;
+    if (coverFee) {
+      chargeTotal   = Math.round((preFeeTotal + STRIPE_FLAT * 100) / (1 - STRIPE_PCT));
+      processingFee = chargeTotal - preFeeTotal;
+    }
 
     console.log(
       `🧾 items $${(itemsAmt/100).toFixed(2)} | ship $${(shippingAmt/100).toFixed(2)} | ` +
-      `tax $${(tax/100).toFixed(2)} | total $${(calculation.amount_total/100).toFixed(2)}`
+      `tax $${(tax/100).toFixed(2)} | fee $${(processingFee/100).toFixed(2)} | charge $${(chargeTotal/100).toFixed(2)}`
     );
 
-    // amount_total already includes items + shipping + tax — charge that
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: calculation.amount_total,
+      amount: chargeTotal,
       currency: "usd",
       automatic_payment_methods: { enabled: true },
       metadata: { tax_calculation: calculation.id, shipping: JSON.stringify(shipping) },
@@ -149,11 +161,12 @@ app.post("/create-payment-intent", async (req, res) => {
 
     console.log("✅ PaymentIntent created:", paymentIntent.id);
     res.json({
-      clientSecret: paymentIntent.client_secret,
-      subtotal:     itemsAmt / 100,
-      shipping:     shippingAmt / 100,
-      tax:          tax / 100,
-      total:        calculation.amount_total / 100,
+      clientSecret:  paymentIntent.client_secret,
+      subtotal:      itemsAmt / 100,
+      shipping:      shippingAmt / 100,
+      tax:           tax / 100,
+      processingFee: processingFee / 100,
+      total:         chargeTotal / 100,
     });
   } catch (err) {
     console.error("❌ /create-payment-intent error:", err.stack);
