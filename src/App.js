@@ -656,6 +656,12 @@ function CheckoutForm({ total, taxInfo, onPaymentComplete, onCancel, highContras
               <span>Subtotal</span>
               <span>${taxInfo.subtotal.toFixed(2)}</span>
             </div>
+            {taxInfo.shipping > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: highContrast ? SDCB.hcText : SDCB.gray }}>
+                <span>Shipping</span>
+                <span>${taxInfo.shipping.toFixed(2)}</span>
+              </div>
+            )}
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: highContrast ? SDCB.hcText : SDCB.gray }}>
               <span>Sales tax</span>
               <span>${taxInfo.tax.toFixed(2)}</span>
@@ -1419,6 +1425,7 @@ export default function App() {
     setClientSecret(paymentData.clientSecret);
     setTaxInfo({
       subtotal: paymentData.subtotal,
+      shipping: paymentData.shipping,
       tax:      paymentData.tax,
       total:    paymentData.total,
     });
