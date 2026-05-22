@@ -888,6 +888,7 @@ function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
   });
   const [status,   setStatus]   = useState("idle"); // idle | submitting | error
   const [errorMsg, setErrorMsg] = useState("");
+  const [coverFee, setCoverFee] = useState(false);
 
   useEffect(() => {
     if (open) {
