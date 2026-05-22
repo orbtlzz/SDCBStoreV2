@@ -12,6 +12,9 @@ const app = express();
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+// flat shipping fee charged to the customer (USD)
+const SHIPPING_FEE = 9.00;
+
 // ─────────────────────────────────────────────────────
 // CORS  (registered BEFORE routes and express.json)
 // ─────────────────────────────────────────────────────
@@ -114,6 +117,7 @@ app.post("/create-payment-intent", async (req, res) => {
     const calculation = await stripe.tax.calculations.create({
       currency: "usd",
       line_items: lineItems,
+      shipping_cost: { amount: Math.round(SHIPPING_FEE * 100) },
       customer_details: {
         address: {
           line1: shipping.address,
@@ -126,26 +130,30 @@ app.post("/create-payment-intent", async (req, res) => {
       },
     });
 
-    const tax = calculation.tax_amount_exclusive;
-    console.log(`🧾 Tax: $${(tax / 100).toFixed(2)} | Total: $${(calculation.amount_total / 100).toFixed(2)}`);
+    const tax         = calculation.tax_amount_exclusive;             // cents (items + shipping tax)
+    const shippingAmt = calculation.shipping_cost.amount;             // cents
+    const itemsAmt    = calculation.amount_total - tax - shippingAmt; // cents
 
-    // amount_total already includes the tax — charge exactly that
+    console.log(
+      `🧾 items $${(itemsAmt/100).toFixed(2)} | ship $${(shippingAmt/100).toFixed(2)} | ` +
+      `tax $${(tax/100).toFixed(2)} | total $${(calculation.amount_total/100).toFixed(2)}`
+    );
+
+    // amount_total already includes items + shipping + tax — charge that
     const paymentIntent = await stripe.paymentIntents.create({
       amount: calculation.amount_total,
       currency: "usd",
       automatic_payment_methods: { enabled: true },
-      metadata: {
-        tax_calculation: calculation.id,
-        shipping: JSON.stringify(shipping),
-      },
+      metadata: { tax_calculation: calculation.id, shipping: JSON.stringify(shipping) },
     });
 
     console.log("✅ PaymentIntent created:", paymentIntent.id);
     res.json({
       clientSecret: paymentIntent.client_secret,
-      subtotal: (calculation.amount_total - tax) / 100,
-      tax: tax / 100,
-      total: calculation.amount_total / 100,
+      subtotal:     itemsAmt / 100,
+      shipping:     shippingAmt / 100,
+      tax:          tax / 100,
+      total:        calculation.amount_total / 100,
     });
   } catch (err) {
     console.error("❌ /create-payment-intent error:", err.stack);
