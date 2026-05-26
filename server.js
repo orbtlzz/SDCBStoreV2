@@ -95,6 +95,21 @@ app.get("/products", async (_req, res) => {
 });
 
 // ─────────────────────────────────────────────────────
+// STAFF LOGIN — verifies the shared staff password
+// ─────────────────────────────────────────────────────
+app.post("/staff-login", (req, res) => {
+  if (!process.env.STAFF_PASSWORD) {
+    console.error("❌ STAFF_PASSWORD env var is not set");
+    return res.status(500).json({ error: "Staff login is not configured yet." });
+  }
+  const { password } = req.body;
+  if (password && password === process.env.STAFF_PASSWORD) {
+    return res.json({ ok: true });
+  }
+  return res.status(401).json({ error: "Incorrect staff password." });
+});
+
+// ─────────────────────────────────────────────────────
 // CREATE PAYMENT INTENT
 // ─────────────────────────────────────────────────────
 app.post("/create-payment-intent", async (req, res) => {
