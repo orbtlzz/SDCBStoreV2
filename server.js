@@ -16,7 +16,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const SHIPPING_FEE = 9.00;
 
 // discount codes that waive the shipping fee (e.g. in-store pickup) — case-insensitive
-const FREE_SHIPPING_CODES = ["PICKUP", "INSTORE"];
+const FREE_SHIPPING_CODES = ["Atlas0514$"];
 
 // Stripe processing fee — only applied when the customer opts in at checkout
 const STRIPE_PCT  = 0.029;
