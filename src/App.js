@@ -1374,6 +1374,150 @@ function catList(product) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// STAFF LOGIN MODAL — verifies the shared staff password with the backend
+// ─────────────────────────────────────────────────────────────────────────────
+function StaffLogin({ open, onClose, onSuccess, highContrast }) {
+  const inputRef = useRef(null);
+  const [password, setPassword] = useState("");
+  const [status,   setStatus]   = useState("idle"); // idle | submitting | error
+  const [errorMsg, setErrorMsg] = useState("");
+
+  useEffect(() => {
+    if (open) {
+      setPassword(""); setStatus("idle"); setErrorMsg("");
+      setTimeout(() => inputRef.current?.focus(), 50);
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const hc = highContrast;
+  const isSubmitting = status === "submitting";
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setStatus("submitting");
+    setErrorMsg("");
+    try {
+      const res = await fetch(`${process.env.REACT_APP_SERVER_URL}/staff-login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "Login failed.");
+      onSuccess(password);
+    } catch (err) {
+      setStatus("error");
+      setErrorMsg(err.message);
+    }
+  };
+
+  return (
+    <>
+      <div aria-hidden="true" onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 1500 }} />
+      <div
+        role="dialog" aria-modal="true" aria-label="Staff login" tabIndex={-1}
+        style={{
+          position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
+          zIndex: 1600, width: 380, maxWidth: "95vw",
+          background: hc ? SDCB.hcBg : SDCB.white,
+          border: hc ? `2px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`,
+          borderRadius: 16, padding: "2rem", boxShadow: "0 20px 60px rgba(13,61,110,0.25)", outline: "none",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
+          <p style={{ margin: 0, fontFamily: "'Playfair Display', Georgia, serif", fontSize: "1.3rem", fontWeight: 700, color: hc ? SDCB.hcYellow : SDCB.navy }}>
+            Staff Login
+          </p>
+          <button onClick={onClose} aria-label="Close staff login" style={{ ...btnStyle(hc, "secondary"), padding: "0.3rem 0.7rem", fontSize: "1rem" }}>
+            ✕
+          </button>
+        </div>
+
+        {status === "error" && (
+          <div role="alert" aria-live="assertive"
+            style={{ background: hc ? "#300" : "#FFF0F0", border: `1.5px solid ${hc ? "#f88" : "#E53E3E"}`, borderRadius: 8, padding: "0.7rem 1rem", color: hc ? "#faa" : "#C53030", fontSize: "0.9rem", marginBottom: "1rem" }}>
+            <strong>Error:</strong> {errorMsg}
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
+          <div>
+            <label htmlFor="staff-password" style={{ display: "block", marginBottom: 4, fontWeight: 600, fontSize: "0.85rem", color: hc ? SDCB.hcYellow : SDCB.navy }}>
+              Staff Password
+            </label>
+            <input
+              ref={inputRef} id="staff-password" type="password" autoComplete="current-password"
+              value={password} onChange={(e) => setPassword(e.target.value)} disabled={isSubmitting}
+              style={{
+                width: "100%", padding: "0.6rem 0.9rem",
+                border: hc ? `2px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`,
+                borderRadius: 8, fontSize: "1rem",
+                background: hc ? "#111" : SDCB.white, color: hc ? SDCB.hcYellow : SDCB.navy,
+                fontFamily: "inherit", boxSizing: "border-box",
+              }}
+            />
+          </div>
+          <button
+            type="submit" disabled={isSubmitting || !password}
+            style={{ ...btnStyle(hc, "primary"), opacity: (isSubmitting || !password) ? 0.65 : 1, cursor: (isSubmitting || !password) ? "not-allowed" : "pointer" }}
+          >
+            {isSubmitting ? "⏳ Checking…" : "Log In"}
+          </button>
+        </form>
+      </div>
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// STAFF PAGE — in-person checkout (POS). Placeholder shell for now.
+// ─────────────────────────────────────────────────────────────────────────────
+function StaffPage({ onLogout, highContrast }) {
+  const hc = highContrast;
+  return (
+    <div style={{ minHeight: "100vh", background: hc ? SDCB.hcBg : SDCB.offWhite, display: "flex", flexDirection: "column" }}>
+      <header
+        role="banner"
+        style={{
+          background: hc ? "#111" : SDCB.navy,
+          borderBottom: hc ? `2px solid ${SDCB.hcYellow}` : "none",
+          padding: "1rem 2rem", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: "0.75rem",
+        }}
+      >
+        <div>
+          <p style={{ margin: 0, fontSize: "0.7rem", letterSpacing: "0.15em", textTransform: "uppercase", color: hc ? SDCB.hcYellow : SDCB.skyMid, fontWeight: 600 }}>
+            Staff Mode
+          </p>
+          <h1 style={{ margin: 0, fontFamily: "'Playfair Display', Georgia, serif", fontSize: "clamp(1.2rem, 3vw, 1.7rem)", color: hc ? SDCB.hcYellow : SDCB.white, fontWeight: 700 }}>
+            In-Person Checkout
+          </h1>
+        </div>
+        <button
+          onClick={onLogout} aria-label="Log out of staff mode"
+          style={{ background: hc ? SDCB.hcYellow : SDCB.skyMid, color: hc ? SDCB.hcBg : SDCB.white, border: "none", borderRadius: 8, padding: "0.5rem 1rem", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", fontSize: "0.9rem" }}
+        >
+          Log Out
+        </button>
+      </header>
+
+      <main style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "2rem", textAlign: "center" }}>
+        <div>
+          <p style={{ fontSize: "2.5rem", margin: "0 0 0.5rem" }}>🛒</p>
+          <p style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: "1.4rem", fontWeight: 700, color: hc ? SDCB.hcYellow : SDCB.navy, margin: "0 0 0.5rem" }}>
+            You're logged in as staff
+          </p>
+          <p style={{ color: hc ? SDCB.hcText : SDCB.gray, fontSize: "0.95rem" }}>
+            The in-person checkout tools will go here next.
+          </p>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -1418,6 +1562,11 @@ export default function App() {
   const [checkoutOpen, setCheckoutOpen] = useState(false);   // payment modal open?
   const [orderStatus,  setOrderStatus]  = useState("idle");  // idle | processing | success | error
   const [orderError,   setOrderError]   = useState("");
+
+  // ── Staff mode ──────────────────────────────────────────────────────────
+  const [staffMode,      setStaffMode]      = useState(() => !!sessionStorage.getItem("staffAuth"));
+  const [staffLoginOpen, setStaffLoginOpen] = useState(false);
+  
   const mainRef   = useRef(null);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
 
@@ -1538,6 +1687,17 @@ export default function App() {
     setCartOpen(true);
     setAnnouncement("Payment cancelled. Returned to cart.");
   }, []);
+  
+  const handleStaffSuccess = useCallback((password) => {
+    sessionStorage.setItem("staffAuth", password);
+    setStaffMode(true);
+    setStaffLoginOpen(false);
+  }, []);
+
+  const handleStaffLogout = useCallback(() => {
+    sessionStorage.removeItem("staffAuth");
+    setStaffMode(false);
+  }, []);
 
   // ── Redirect-based payment return (bank redirect, etc.) ────────────────
   useEffect(() => {
@@ -1580,6 +1740,10 @@ export default function App() {
   const hc = highContrast;
   const bg = hc ? SDCB.hcBg : SDCB.offWhite;
   const fg = hc ? SDCB.hcYellow : SDCB.navy;
+
+  if (staffMode) {
+    return <StaffPage onLogout={handleStaffLogout} highContrast={highContrast} />;
+  }
 
   return (
     <>
@@ -1638,6 +1802,13 @@ export default function App() {
         </div>
 
         <nav aria-label="Header actions" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <button
+            onClick={() => setStaffLoginOpen(true)}
+            aria-label="Staff login"
+            style={{ background: "transparent", color: hc ? SDCB.hcYellow : SDCB.white, border: hc ? `1.5px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.skyMid}`, borderRadius: 8, padding: "0.45rem 0.85rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: "0.82rem" }}
+          >
+            Staff
+          </button>
           <button
             onClick={() => setHighContrast((hc) => !hc)}
             aria-pressed={highContrast}
@@ -1813,6 +1984,14 @@ export default function App() {
         errorMsg={orderError}
         email={shipping?.email}
         onClose={handleOrderDone}
+        highContrast={highContrast}
+      />
+          
+      {/* Staff login */}
+      <StaffLogin
+        open={staffLoginOpen}
+        onClose={() => setStaffLoginOpen(false)}
+        onSuccess={handleStaffSuccess}
         highContrast={highContrast}
       />
     </>
