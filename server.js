@@ -112,6 +112,54 @@ app.get("/products", async (_req, res) => {
 });
 
 // ─────────────────────────────────────────────────────
+// STOCK MANAGEMENT
+// ─────────────────────────────────────────────────────
+
+// Verify the cart against current stock; throws if anything would oversell.
+// Items with a blank quantity are treated as unlimited.
+async function checkStock(cart) {
+  const products = await getProducts();
+  for (const item of cart) {
+    const product = products.find(p => String(p.id) === String(item.id));
+    if (!product) throw new Error(`Product not found: ${item.name || item.id}`);
+    const stock = product.quantity;
+    if (stock === "" || stock === null || stock === undefined) continue;
+    const available = Number(stock);
+    const wanted    = Number(item.qty) || 1;
+    if (wanted > available) {
+      throw new Error(
+        available <= 0
+          ? `${product.name} is out of stock.`
+          : `Only ${available} of ${product.name} available (you have ${wanted} in your cart).`
+      );
+    }
+  }
+}
+
+// Decrement quantities in the sheet after a successful sale.
+async function decrementStock(cart) {
+  if (!process.env.STOCK_SECRET) {
+    console.warn("⚠️ STOCK_SECRET not set — skipping stock update");
+    return;
+  }
+  try {
+    const items = cart.map(item => ({ id: item.id, qty: item.qty || 1 }));
+    const res = await fetch(SHEET_URL, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({ secret: process.env.STOCK_SECRET, items }),
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    console.log("📦 Stock decremented:", data.updates);
+    // Invalidate the product cache so the next read pulls fresh quantities
+    productCache = { data: null, fetchedAt: 0 };
+  } catch (err) {
+    console.error("⚠️ Could not decrement stock (non-fatal):", err.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────
 // STAFF LOGIN — verifies the shared staff password
 // ─────────────────────────────────────────────────────
 app.post("/staff-login", (req, res) => {
@@ -137,6 +185,12 @@ app.post("/staff/cash-sale", requireStaff, async (req, res) => {
     const { cart } = req.body;
     if (!cart || !Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Invalid or empty cart" });
+    }
+    // Block overselling
+    try {
+      await checkStock(cart);
+    } catch (stockErr) {
+      return res.status(400).json({ error: stockErr.message });
     }
 
     // Same line-item shape as /create-payment-intent
@@ -218,7 +272,8 @@ app.post("/staff/cash-sale", requireStaff, async (req, res) => {
     } catch (taxErr) {
       console.error("❌ Tax transaction failed (non-fatal):", taxErr.message);
     }
-
+    
+    await decrementStock(cart);
     console.log(`✅ Cash sale recorded: ${paid.number} — $${(totalCents/100).toFixed(2)}`);
 
     res.json({
@@ -245,6 +300,13 @@ app.post("/create-payment-intent", async (req, res) => {
 
     if (!cart || !Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Invalid or empty cart" });
+    }
+    
+    // Block overselling
+    try {
+      await checkStock(cart);
+    } catch (stockErr) {
+      return res.status(400).json({ error: stockErr.message });
     }
 
     // In-person staff sales use the store address for tax and have no shipping.
@@ -310,9 +372,13 @@ app.post("/create-payment-intent", async (req, res) => {
       amount: chargeTotal,
       currency: "usd",
       automatic_payment_methods: { enabled: true },
-      metadata: inPerson
-        ? { tax_calculation: calculation.id, inPerson: "true" }
-        : { tax_calculation: calculation.id, shipping: JSON.stringify(shipping) },
+      metadata: {
+        tax_calculation: calculation.id,
+        cart: JSON.stringify(cart.map(i => ({ id: i.id, qty: i.qty }))),
+        ...(inPerson
+          ? { inPerson: "true" }
+          : { shipping: JSON.stringify(shipping) }),
+      },
     });
 
     console.log("✅ PaymentIntent created:", paymentIntent.id);
@@ -515,8 +581,16 @@ app.post("/create-order-after-payment", async (req, res) => {
       }
     }
     
+    // Resolve the cart (body first, PaymentIntent metadata as fallback for redirect flows)
+    let cart = req.body.cart;
+    if (!cart && paymentIntent.metadata?.cart) {
+      try { cart = JSON.parse(paymentIntent.metadata.cart); } catch {}
+    }
+    if (Array.isArray(cart) && cart.length > 0) {
+      await decrementStock(cart);
+    }
+
     // In-person staff card sale → no shipping, no Shippo label, no customer email.
-    // Tax transaction was already recorded above.
     if (paymentIntent.metadata?.inPerson === "true") {
       console.log("✅ In-person card sale finalized (no shipping label or email)");
       return res.json({ ok: true, inPerson: true, total: paymentIntent.amount / 100 });
