@@ -169,11 +169,12 @@ app.post("/staff/cash-sale", requireStaff, async (req, res) => {
       metadata: { channel: "in_person", payment_method: "cash" },
     });
 
-    // Create the invoice (no auto-charge, we mark it paid out-of-band)
+    // Create the invoice. charge_automatically skips the customer-email
+    // requirement that send_invoice has; we never actually charge anything
+    // because auto_advance is off and we mark it paid out-of-band below.
     const invoice = await stripe.invoices.create({
       customer:          customer.id,
-      collection_method: "send_invoice",
-      days_until_due:    1,
+      collection_method: "charge_automatically",
       auto_advance:      false,
       description:       "In-person cash sale",
       metadata: {
