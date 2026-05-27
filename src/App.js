@@ -1603,6 +1603,24 @@ export default function App() {
       .finally(() => setProductsLoading(false));
   }, []);
 
+  // Load the list of sale locations when staff mode activates
+  useEffect(() => {
+    if (!staffMode) { setLocations([]); return; }
+    fetch(`${process.env.REACT_APP_SERVER_URL}/staff/locations`, {
+      headers: { "x-staff-password": sessionStorage.getItem("staffAuth") || "" },
+    })
+      .then(res => res.ok ? res.json() : Promise.reject(res))
+      .then(data => {
+        setLocations(data);
+        // Default to the first location if nothing's saved yet
+        if (!sessionStorage.getItem("staffLocationId") && data.length > 0) {
+          setLocationId(data[0].id);
+          sessionStorage.setItem("staffLocationId", data[0].id);
+        }
+      })
+      .catch(err => console.error("❌ Could not load staff locations:", err));
+  }, [staffMode]);
+
   const categories = ["All", ...new Set(products.flatMap(catList))];
 
   // ── Checkout flow state ─────────────────────────────────────────────────
@@ -1617,7 +1635,9 @@ export default function App() {
   // ── Staff mode ──────────────────────────────────────────────────────────
   const [staffMode,      setStaffMode]      = useState(() => !!sessionStorage.getItem("staffAuth"));
   const [staffLoginOpen, setStaffLoginOpen] = useState(false);
-  const [saleInfo,       setSaleInfo]       = useState(null); // in-person sale result for OrderResultModal
+  const [saleInfo,       setSaleInfo]       = useState(null);
+  const [locations,      setLocations]      = useState([]);
+  const [locationId,     setLocationId]     = useState(() => sessionStorage.getItem("staffLocationId") || "");
   
   const mainRef   = useRef(null);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
@@ -1677,7 +1697,7 @@ export default function App() {
       const res = await fetch(`${process.env.REACT_APP_SERVER_URL}/create-payment-intent`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ cart, inPerson: true }),
+        body:    JSON.stringify({ cart, inPerson: true, locationId }),
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || `Server responded ${res.status}`);
@@ -1696,7 +1716,7 @@ export default function App() {
       console.error("❌ Staff checkout setup failed:", err);
       setAnnouncement(`Error: ${err.message}`);
     }
-  }, [cart, staffMode]);
+  }, [cart, staffMode, locationId]);
 
   // ── Step 2: address submitted → tax calculated → open payment modal ────
   const handleAddressReady = useCallback((shippingData, paymentData) => {
@@ -1785,7 +1805,9 @@ export default function App() {
 
   const handleStaffLogout = useCallback(() => {
     sessionStorage.removeItem("staffAuth");
+    sessionStorage.removeItem("staffLocationId");
     setStaffMode(false);
+    setLocationId("");
   }, []);
 
   // ── Cash sale (staff only) — records a Stripe Invoice paid out-of-band ──
@@ -1801,7 +1823,7 @@ export default function App() {
           "Content-Type":     "application/json",
           "x-staff-password": sessionStorage.getItem("staffAuth") || "",
         },
-        body: JSON.stringify({ cart }),
+        body: JSON.stringify({ cart, cancelPaymentIntent: piToCancel, locationId }),
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || `Server responded ${res.status}`);
@@ -1926,6 +1948,29 @@ export default function App() {
         </div>
 
         <nav aria-label="Header actions" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          {staffMode && locations.length > 0 && (
+            <select
+              value={locationId}
+              onChange={(e) => {
+                setLocationId(e.target.value);
+                sessionStorage.setItem("staffLocationId", e.target.value);
+                const loc = locations.find(l => l.id === e.target.value);
+                if (loc) setAnnouncement(`Sale location set to ${loc.name}`);
+              }}
+              aria-label="Sale location for in-person checkout"
+              style={{
+                background: hc ? "#111" : SDCB.white,
+                color:      hc ? SDCB.hcYellow : SDCB.navy,
+                border:     hc ? `1.5px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.skyMid}`,
+                borderRadius: 8, padding: "0.45rem 0.6rem", fontWeight: 600,
+                cursor: "pointer", fontFamily: "inherit", fontSize: "0.82rem",
+              }}
+            >
+              {locations.map(loc => (
+                <option key={loc.id} value={loc.id}>📍 {loc.name}</option>
+              ))}
+            </select>
+          )}
           <button
             onClick={() => staffMode ? handleStaffLogout() : setStaffLoginOpen(true)}
             aria-label={staffMode ? "Staff mode active — click to log out" : "Staff login"}
