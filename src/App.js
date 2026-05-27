@@ -920,7 +920,6 @@ function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
   const [status,   setStatus]   = useState("idle"); // idle | submitting | error
   const [errorMsg, setErrorMsg] = useState("");
   const [coverFee, setCoverFee] = useState(false);
-  const [discountCode, setDiscountCode] = useState("");
 
   useEffect(() => {
     if (open) {
@@ -928,7 +927,6 @@ function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
       setStatus("idle");
       setErrorMsg("");
       setCoverFee(false);
-      setDiscountCode("");
       setTimeout(() => firstRef.current?.focus(), 50);
     }
   }, [open]);
@@ -992,7 +990,7 @@ function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cart, shipping, coverFee, discountCode }),
+          body: JSON.stringify({ cart, shipping, coverFee }),
         }
       );
       const data = await res.json();
@@ -1105,22 +1103,6 @@ function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
           <p style={{ margin: 0, fontSize: "0.75rem", color: highContrast ? "#aaa" : SDCB.gray }}>
             {reqMark} Required fields
           </p>
-
-          <div>
-            <label htmlFor="discount-code" style={labelStyle}>
-              Discount Code{" "}
-              <span style={{ fontWeight: 400, color: highContrast ? "#aaa" : SDCB.gray }}>(optional)</span>
-            </label>
-            <input
-              id="discount-code"
-              type="text"
-              value={discountCode}
-              onChange={(e) => setDiscountCode(e.target.value)}
-              disabled={isSubmitting}
-              placeholder="In-store pickup code, if you have one"
-              style={inputStyle}
-            />
-          </div>
 
           <label
             style={{
