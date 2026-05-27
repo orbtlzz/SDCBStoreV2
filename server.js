@@ -15,9 +15,6 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // flat shipping fee charged to the customer (USD)
 const SHIPPING_FEE = 9.00;
 
-// discount codes that waive the shipping fee (e.g. in-store pickup) — case-insensitive
-const FREE_SHIPPING_CODES = ["Atlas0514$"];
-
 // Store address — used as the tax location for in-person staff sales.
 // ❗ EDIT THIS to your real store address before going live.
 const STORE_ADDRESS = {
@@ -244,7 +241,7 @@ app.post("/staff/cash-sale", requireStaff, async (req, res) => {
 app.post("/create-payment-intent", async (req, res) => {
   console.log("📥 /create-payment-intent called");
   try {
-    const { cart, shipping, coverFee, discountCode, inPerson } = req.body;
+    const { cart, shipping, coverFee, inPerson } = req.body;
 
     if (!cart || !Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Invalid or empty cart" });
@@ -267,8 +264,7 @@ app.post("/create-payment-intent", async (req, res) => {
         postal_code: shipping.zip,
         country:     "US",
       };
-      const code    = String(discountCode || "").trim().toUpperCase();
-      shippingCents = FREE_SHIPPING_CODES.includes(code) ? 0 : Math.round(SHIPPING_FEE * 100);
+      shippingCents = Math.round(SHIPPING_FEE * 100);
     }
     // Line items — amounts in cents; reference must be unique per line
     const lineItems = cart.map((item) => {
