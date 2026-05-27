@@ -1732,7 +1732,7 @@ export default function App() {
           {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ shipping, paymentIntentId }),
+            body: JSON.stringify({ shipping, paymentIntentId, cart }),
           }
         );
         const data = await res.json();
@@ -1757,7 +1757,7 @@ export default function App() {
         setAnnouncement(`Order error: ${err.message}`);
       }
     },
-    [shipping, taxInfo]
+    [shipping, taxInfo, cart]
   );
   // ── Step 4: user dismisses the confirmation → reset for next order ─────
   const handleOrderDone = useCallback(() => {
@@ -1852,6 +1852,12 @@ export default function App() {
   }, []);
 
   const filtered = products.filter((p) => {
+    
+    // Hide sold-out items (blank quantity = unlimited stock)
+    if (p.quantity !== "" && p.quantity !== null && p.quantity !== undefined && Number(p.quantity) <= 0) {
+      return false;
+    }               
+                                   
     const matchCat    = category === "All" || catList(p).includes(category);
     const matchSearch =
       p.name.toLowerCase().includes(search.toLowerCase()) ||
