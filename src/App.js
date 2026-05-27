@@ -487,7 +487,7 @@ function ProductCard({ product, onAddToCart, onAnnounce, highContrast }) {
 // FIX: capture result.paymentIntent.id and hand it to parent via
 // onPaymentComplete(id). Parent opens the ShippingModal next.
 // ─────────────────────────────────────────────────────────────────────────────
-function CheckoutForm({ total, taxInfo, onPaymentComplete, onCancel, highContrast, onAnnounce }) {
+function CheckoutForm({ total, taxInfo, onPaymentComplete, onCancel, staffMode, onCashSale, highContrast, onAnnounce }) {
   const stripe    = useStripe();
   const elements  = useElements();
   const errorRef  = useRef(null);
@@ -639,6 +639,34 @@ function CheckoutForm({ total, taxInfo, onPaymentComplete, onCancel, highContras
       aria-label="Payment form"
       style={{ display: "flex", flexDirection: "column", gap: "1.2rem" }}
     >
+      {staffMode && (
+        <div
+          style={{
+            background: highContrast ? "#111" : "#FFF8E6",
+            border: highContrast ? `2px solid ${SDCB.hcYellow}` : `1.5px solid #F59E0B`,
+            borderRadius: 8, padding: "0.9rem 1rem", marginBottom: 12,
+            display: "flex", flexDirection: "column", gap: 8,
+          }}
+        >
+          <button
+            type="button"
+            onClick={onCashSale}
+            aria-label={`Record cash sale of $${total.toFixed(2)}`}
+            style={{
+              background: highContrast ? SDCB.hcYellow : "#F59E0B",
+              color:      highContrast ? SDCB.hcBg    : SDCB.white,
+              border: "none", borderRadius: 8, padding: "0.7rem 1rem",
+              fontWeight: 700, fontSize: "1rem", cursor: "pointer", fontFamily: "inherit",
+            }}
+          >
+            💵 Pay with Cash — Collect ${total.toFixed(2)}
+          </button>
+          <p style={{ margin: 0, fontSize: "0.8rem", color: highContrast ? SDCB.hcText : SDCB.gray, textAlign: "center" }}>
+            Or enter card details below to charge a card instead.
+          </p>
+        </div>
+      )}
+        
       <div
         style={{
           background: highContrast ? "#111" : SDCB.skyLight,
@@ -750,6 +778,8 @@ function CheckoutModal({
   open,
   onClose,
   onPaymentComplete,
+  staffMode,
+  onCashSale,
   highContrast,
   onAnnounce,
 }) {
@@ -862,6 +892,8 @@ function CheckoutModal({
             taxInfo={taxInfo}
             onPaymentComplete={onPaymentComplete}
             onCancel={onClose}
+            staffMode={staffMode}
+            onCashSale={onCashSale}
             highContrast={highContrast}
             onAnnounce={onAnnounce}
           />
@@ -1127,7 +1159,7 @@ function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
 // Shown AFTER payment succeeds — while the backend creates the shipping label
 // and sends the email ("processing"), then the final confirmation ("success").
 // ─────────────────────────────────────────────────────────────────────────────
-function OrderResultModal({ status, errorMsg, email, onClose, highContrast }) {
+function OrderResultModal({ status, errorMsg, email, saleInfo, onClose, highContrast }) {
   const dialogRef = useRef(null);
 
   useEffect(() => {
@@ -1159,7 +1191,44 @@ function OrderResultModal({ status, errorMsg, email, onClose, highContrast }) {
           </div>
         )}
 
-        {status === "success" && (
+        {status === "success" && saleInfo?.kind === "cash" && (
+          <div role="status" aria-live="polite" style={{ padding: "1.5rem 0" }}>
+            <p style={{ fontSize: "3rem", margin: "0 0 0.75rem" }}>💵</p>
+            <p style={title}>Cash Sale Recorded</p>
+            <p style={gray}>Collect from the customer:</p>
+            <p style={{ fontSize: "2rem", fontWeight: 800, color: highContrast ? SDCB.hcYellow : "#F59E0B", margin: "0.25rem 0 1rem" }}>
+              ${saleInfo.total.toFixed(2)}
+            </p>
+            <p style={{ ...gray, fontSize: "0.85rem" }}>Invoice #{saleInfo.invoiceNumber}</p>
+            {saleInfo.hostedInvoiceUrl && (
+              <p style={{ margin: "0.5rem 0 1.25rem" }}>
+                <a href={saleInfo.hostedInvoiceUrl} target="_blank" rel="noopener noreferrer"
+                  style={{ color: highContrast ? SDCB.hcYellow : SDCB.blue, fontWeight: 600 }}>
+                  View / print receipt
+                </a>
+              </p>
+            )}
+            <button onClick={onClose} aria-label="Start a new sale" style={btnStyle(highContrast, "primary")}>
+              New Sale
+            </button>
+          </div>
+        )}
+
+        {status === "success" && saleInfo?.kind === "card_in_person" && (
+          <div role="status" aria-live="polite" style={{ padding: "1.5rem 0" }}>
+            <p style={{ fontSize: "3rem", margin: "0 0 0.75rem" }}>💳</p>
+            <p style={title}>Card Payment Recorded</p>
+            <p style={gray}>Charged to the customer's card:</p>
+            <p style={{ fontSize: "2rem", fontWeight: 800, color: highContrast ? SDCB.hcYellow : SDCB.blue, margin: "0.25rem 0 1.25rem" }}>
+              ${saleInfo.total.toFixed(2)}
+            </p>
+            <button onClick={onClose} aria-label="Start a new sale" style={btnStyle(highContrast, "primary")}>
+              New Sale
+            </button>
+          </div>
+        )}
+
+        {status === "success" && !saleInfo && (
           <div role="status" aria-live="polite" style={{ padding: "1.5rem 0" }}>
             <p style={{ fontSize: "3rem", margin: "0 0 0.75rem" }}>🎉</p>
             <p style={title}>Order Placed!</p>
@@ -1566,6 +1635,7 @@ export default function App() {
   // ── Staff mode ──────────────────────────────────────────────────────────
   const [staffMode,      setStaffMode]      = useState(() => !!sessionStorage.getItem("staffAuth"));
   const [staffLoginOpen, setStaffLoginOpen] = useState(false);
+  const [saleInfo,       setSaleInfo]       = useState(null); // in-person sale result for OrderResultModal
   
   const mainRef   = useRef(null);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
@@ -1609,12 +1679,42 @@ export default function App() {
     setCart((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
-  // ── Step 1: open the shipping address modal ────────────────────────────
-  const handleCheckout = useCallback(() => {
+  // ── Step 1: open the shipping address modal (or skip it for staff) ──────────
+  const handleCheckout = useCallback(async () => {
+    if (!staffMode) {
+      // Normal customer: collect address first
+      setCartOpen(false);
+      setShippingOpen(true);
+      setAnnouncement("Please enter your shipping address to continue.");
+      return;
+    }
+    // Staff (in-person): no address needed — create PaymentIntent immediately
     setCartOpen(false);
-    setShippingOpen(true);
-    setAnnouncement("Please enter your shipping address to continue.");
-  }, []);
+    setAnnouncement("Preparing in-person checkout…");
+    try {
+      const res = await fetch(`${process.env.REACT_APP_SERVER_URL}/create-payment-intent`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ cart, inPerson: true }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `Server responded ${res.status}`);
+      setShipping(null);
+      setClientSecret(data.clientSecret);
+      setTaxInfo({
+        subtotal:      data.subtotal,
+        shipping:      data.shipping,
+        tax:           data.tax,
+        processingFee: data.processingFee,
+        total:         data.total,
+      });
+      setCheckoutOpen(true);
+      setAnnouncement("Payment ready. Choose cash or card.");
+    } catch (err) {
+      console.error("❌ Staff checkout setup failed:", err);
+      setAnnouncement(`Error: ${err.message}`);
+    }
+  }, [cart, staffMode]);
 
   // ── Step 2: address submitted → tax calculated → open payment modal ────
   const handleAddressReady = useCallback((shippingData, paymentData) => {
@@ -1657,11 +1757,17 @@ export default function App() {
         if (!res.ok || data.error) {
           throw new Error(data.error || `Server responded ${res.status}`);
         }
-        console.log("✅ Order created. Tracking:", data.trackingNumber);
-        setOrderStatus("success");
-        setAnnouncement(
-          `Order confirmed! A confirmation email has been sent to ${shipping?.email || "you"}.`
-        );
+        if (data.inPerson) {
+          setSaleInfo({ kind: "card_in_person", total: data.total ?? taxInfo?.total ?? 0 });
+          setOrderStatus("success");
+          setAnnouncement(`Card payment recorded. $${(data.total ?? 0).toFixed(2)} collected.`);
+        } else {
+          console.log("✅ Order created. Tracking:", data.trackingNumber);
+          setOrderStatus("success");
+          setAnnouncement(
+            `Order confirmed! A confirmation email has been sent to ${shipping?.email || "you"}.`
+          );
+        }
       } catch (err) {
         console.error("❌ Order creation failed:", err);
         setOrderStatus("error");
@@ -1669,7 +1775,7 @@ export default function App() {
         setAnnouncement(`Order error: ${err.message}`);
       }
     },
-    [shipping]
+    [shipping, taxInfo]
   );
   // ── Step 4: user dismisses the confirmation → reset for next order ─────
   const handleOrderDone = useCallback(() => {
@@ -1677,9 +1783,10 @@ export default function App() {
     setOrderError("");
     setShipping(null);
     setTaxInfo(null);
+    setSaleInfo(null);
     setCart([]);
-    setAnnouncement("Thank you! You can keep browsing the store.");
-  }, []);
+    setAnnouncement(staffMode ? "Ready for the next sale." : "Thank you! You can keep browsing the store.");
+  }, [staffMode]);
 
   const handleCheckoutClose = useCallback(() => {
     setCheckoutOpen(false);
@@ -1698,6 +1805,39 @@ export default function App() {
     sessionStorage.removeItem("staffAuth");
     setStaffMode(false);
   }, []);
+
+  // ── Cash sale (staff only) — records a Stripe Invoice paid out-of-band ──
+  const handleCashSale = useCallback(async () => {
+    setCheckoutOpen(false);
+    setClientSecret(null);
+    setOrderStatus("processing");
+    setAnnouncement("Recording cash sale, please wait.");
+    try {
+      const res = await fetch(`${process.env.REACT_APP_SERVER_URL}/staff/cash-sale`, {
+        method:  "POST",
+        headers: {
+          "Content-Type":     "application/json",
+          "x-staff-password": sessionStorage.getItem("staffAuth") || "",
+        },
+        body: JSON.stringify({ cart }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || `Server responded ${res.status}`);
+      setSaleInfo({
+        kind:             "cash",
+        total:            data.total,
+        invoiceNumber:    data.invoiceNumber,
+        hostedInvoiceUrl: data.hostedInvoiceUrl,
+      });
+      setOrderStatus("success");
+      setAnnouncement(`Cash sale recorded. Collect $${data.total.toFixed(2)} from the customer.`);
+    } catch (err) {
+      console.error("❌ Cash sale failed:", err);
+      setOrderStatus("error");
+      setOrderError(err.message);
+      setAnnouncement(`Cash sale error: ${err.message}`);
+    }
+  }, [cart]);
 
   // ── Redirect-based payment return (bank redirect, etc.) ────────────────
   useEffect(() => {
@@ -1740,10 +1880,6 @@ export default function App() {
   const hc = highContrast;
   const bg = hc ? SDCB.hcBg : SDCB.offWhite;
   const fg = hc ? SDCB.hcYellow : SDCB.navy;
-
-  if (staffMode) {
-    return <StaffPage onLogout={handleStaffLogout} highContrast={highContrast} />;
-  }
 
   return (
     <>
@@ -1803,11 +1939,17 @@ export default function App() {
 
         <nav aria-label="Header actions" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <button
-            onClick={() => setStaffLoginOpen(true)}
-            aria-label="Staff login"
-            style={{ background: "transparent", color: hc ? SDCB.hcYellow : SDCB.white, border: hc ? `1.5px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.skyMid}`, borderRadius: 8, padding: "0.45rem 0.85rem", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", fontSize: "0.82rem" }}
+            onClick={() => staffMode ? handleStaffLogout() : setStaffLoginOpen(true)}
+            aria-label={staffMode ? "Staff mode active — click to log out" : "Staff login"}
+            style={{
+              background: staffMode ? (hc ? SDCB.hcYellow : "#F59E0B") : "transparent",
+              color:      staffMode ? (hc ? SDCB.hcBg : SDCB.white) : (hc ? SDCB.hcYellow : SDCB.white),
+              border:     hc ? `1.5px solid ${SDCB.hcYellow}` : `1.5px solid ${staffMode ? "#F59E0B" : SDCB.skyMid}`,
+              borderRadius: 8, padding: "0.45rem 0.85rem", fontWeight: 600, cursor: "pointer",
+              fontFamily: "inherit", fontSize: "0.82rem",
+            }}
           >
-            Staff
+            {staffMode ? "● Staff Mode — Log Out" : "Staff"}
           </button>
           <button
             onClick={() => setHighContrast((hc) => !hc)}
@@ -1974,6 +2116,8 @@ export default function App() {
         open={checkoutOpen}
         onClose={handleCheckoutClose}
         onPaymentComplete={handlePaymentComplete}
+        staffMode={staffMode}
+        onCashSale={handleCashSale}
         highContrast={highContrast}
         onAnnounce={setAnnouncement}
       />
@@ -1983,6 +2127,7 @@ export default function App() {
         status={orderStatus}
         errorMsg={orderError}
         email={shipping?.email}
+        saleInfo={saleInfo}
         onClose={handleOrderDone}
         highContrast={highContrast}
       />
