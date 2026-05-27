@@ -15,15 +15,41 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // flat shipping fee charged to the customer (USD)
 const SHIPPING_FEE = 9.00;
 
-// Store address — used as the tax location for in-person staff sales.
-// ❗ EDIT THIS to your real store address before going live.
-const STORE_ADDRESS = {
-  line1:       "5922 El Cajon Blvd",
-  city:        "San Diego",
-  state:       "CA",
-  postal_code: "92115",
-  country:     "US",
-};
+// ─────────────────────────────────────────────────────
+// SALE LOCATIONS — used as the tax address for in-person staff sales.
+// The first entry is the default. Edit this list to add/remove venues.
+// ─────────────────────────────────────────────────────
+const LOCATIONS = [
+  {
+    id:   "main",
+    name: "San Diego Store",
+    address: {
+      line1:       "5922 El Cajon Blvd",
+      city:        "San Diego",
+      state:       "CA",
+      postal_code: "92115",
+      country:     "US",
+    },
+  },
+  {
+    id:   "vista",
+    name: "Vista Pop-up",
+    address: {
+      line1:       "PLACEHOLDER STREET",
+      city:        "Vista",
+      state:       "CA",
+      postal_code: "92084",
+      country:     "US",
+    },
+  },
+  // Add more locations here as needed — each needs a unique id, a display name,
+  // and a full address (line1, city, state, postal_code, country).
+];
+
+// Look up a location by id; falls back to the first entry if not found.
+function getLocation(locationId) {
+  return LOCATIONS.find(l => l.id === locationId) || LOCATIONS[0];
+}
 
 // Stripe processing fee — only applied when the customer opts in at checkout
 const STRIPE_PCT  = 0.029;
@@ -175,6 +201,13 @@ app.post("/staff-login", (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────
+// STAFF LOCATIONS — list of sale venues (id + name only)
+// ─────────────────────────────────────────────────────
+app.get("/staff/locations", requireStaff, (_req, res) => {
+  res.json(LOCATIONS.map(l => ({ id: l.id, name: l.name })));
+});
+
+// ─────────────────────────────────────────────────────
 // STAFF CASH SALE — records an in-person cash sale as a Stripe Invoice
 // marked paid out-of-band. No card is charged. Tax is calculated and
 // recorded the same way as the online card flow.
@@ -182,7 +215,8 @@ app.post("/staff-login", (req, res) => {
 app.post("/staff/cash-sale", requireStaff, async (req, res) => {
   console.log("💵 /staff/cash-sale called");
   try {
-    const { cart } = req.body;
+    const { cart, cancelPaymentIntent, locationId } = req.body;
+    const location = getLocation(locationId);
     if (!cart || !Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Invalid or empty cart" });
     }
@@ -208,16 +242,16 @@ app.post("/staff/cash-sale", requireStaff, async (req, res) => {
     const calculation = await stripe.tax.calculations.create({
       currency:   "usd",
       line_items: lineItems,
-      customer_details: { address: STORE_ADDRESS, address_source: "shipping" },
+      customer_details: { address: location.address, address_source: "shipping" },
     });
     const tax        = calculation.tax_amount_exclusive; // cents
     const totalCents = calculation.amount_total;         // cents (items + tax)
 
     // Create a fresh customer for this sale
     const customer = await stripe.customers.create({
-      name:     "In-person cash sale",
-      address:  STORE_ADDRESS,
-      metadata: { channel: "in_person", payment_method: "cash" },
+      name:     `In-person cash sale — ${location.name}`,
+      address:  location.address,
+      metadata: { channel: "in_person", payment_method: "cash", location: location.name },
     });
 
     // Create the invoice. charge_automatically skips the customer-email
@@ -232,6 +266,7 @@ app.post("/staff/cash-sale", requireStaff, async (req, res) => {
         channel:         "in_person",
         payment_method:  "cash",
         tax_calculation: calculation.id,
+        location:        location.name,
       },
     });
 
@@ -312,9 +347,11 @@ app.post("/create-payment-intent", async (req, res) => {
     // In-person staff sales use the store address for tax and have no shipping.
     // Online customers still need a shipping address.
     let taxAddress, shippingCents;
+    let inPersonLocation = null;
     if (inPerson) {
-      taxAddress    = STORE_ADDRESS;
-      shippingCents = 0;
+      inPersonLocation = getLocation(req.body.locationId);
+      taxAddress       = inPersonLocation.address;
+      shippingCents    = 0;
     } else {
       if (!shipping?.address || !shipping?.zip) {
         return res.status(400).json({ error: "Shipping address required for tax" });
@@ -376,7 +413,7 @@ app.post("/create-payment-intent", async (req, res) => {
         tax_calculation: calculation.id,
         cart: JSON.stringify(cart.map(i => ({ id: i.id, qty: i.qty }))),
         ...(inPerson
-          ? { inPerson: "true" }
+          ? { inPerson: "true", location: inPersonLocation.name }
           : { shipping: JSON.stringify(shipping) }),
       },
     });
