@@ -15,6 +15,19 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // flat shipping fee charged to the customer (USD)
 const SHIPPING_FEE = 9.00;
 
+// discount codes that waive the shipping fee (e.g. in-store pickup) — case-insensitive
+const FREE_SHIPPING_CODES = ["Atlas0514$"];
+
+// Store address — used as the tax location for in-person staff sales.
+// ❗ EDIT THIS to your real store address before going live.
+const STORE_ADDRESS = {
+  line1:       "5922 El Cajon Blvd",
+  city:        "San Diego",
+  state:       "CA",
+  postal_code: "92115",
+  country:     "US",
+};
+
 // Stripe processing fee — only applied when the customer opts in at checkout
 const STRIPE_PCT  = 0.029;
 const STRIPE_FLAT = 0.30;
@@ -55,6 +68,16 @@ const transporter = nodemailer.createTransport({
     rejectUnauthorized: false,
   },
 });
+
+// Gate for staff-only routes. The frontend sends the password from sessionStorage
+// in the x-staff-password header.
+function requireStaff(req, res, next) {
+  const pw = req.headers["x-staff-password"];
+  if (!process.env.STAFF_PASSWORD || pw !== process.env.STAFF_PASSWORD) {
+    return res.status(401).json({ error: "Staff authentication required." });
+  }
+  next();
+}
 
 // ─────────────────────────────────────────────────────
 // HEALTH CHECK
@@ -107,20 +130,145 @@ app.post("/staff-login", (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────
+// STAFF CASH SALE — records an in-person cash sale as a Stripe Invoice
+// marked paid out-of-band. No card is charged. Tax is calculated and
+// recorded the same way as the online card flow.
+// ─────────────────────────────────────────────────────
+app.post("/staff/cash-sale", requireStaff, async (req, res) => {
+  console.log("💵 /staff/cash-sale called");
+  try {
+    const { cart } = req.body;
+    if (!cart || !Array.isArray(cart) || cart.length === 0) {
+      return res.status(400).json({ error: "Invalid or empty cart" });
+    }
+
+    // Same line-item shape as /create-payment-intent
+    const lineItems = cart.map((item) => {
+      const line = {
+        amount:    Math.round((item.price || 0) * (item.qty || 1) * 100),
+        reference: String(item.id),
+        quantity:  item.qty || 1,
+      };
+      if (item.taxCode) line.tax_code = String(item.taxCode).trim();
+      return line;
+    });
+
+    // Calculate tax at the store's location
+    const calculation = await stripe.tax.calculations.create({
+      currency:   "usd",
+      line_items: lineItems,
+      customer_details: { address: STORE_ADDRESS, address_source: "shipping" },
+    });
+    const tax        = calculation.tax_amount_exclusive; // cents
+    const totalCents = calculation.amount_total;         // cents (items + tax)
+
+    // Create a fresh customer for this sale
+    const customer = await stripe.customers.create({
+      name:     "In-person cash sale",
+      address:  STORE_ADDRESS,
+      metadata: { channel: "in_person", payment_method: "cash" },
+    });
+
+    // Create the invoice (no auto-charge, we mark it paid out-of-band)
+    const invoice = await stripe.invoices.create({
+      customer:          customer.id,
+      collection_method: "send_invoice",
+      days_until_due:    1,
+      auto_advance:      false,
+      description:       "In-person cash sale",
+      metadata: {
+        channel:         "in_person",
+        payment_method:  "cash",
+        tax_calculation: calculation.id,
+      },
+    });
+
+    // Add each cart item as an invoice item
+    for (const item of cart) {
+      await stripe.invoiceItems.create({
+        customer:    customer.id,
+        invoice:     invoice.id,
+        description: item.name,
+        quantity:    item.qty || 1,
+        unit_amount: Math.round((item.price || 0) * 100),
+        currency:    "usd",
+      });
+    }
+
+    // Single "Sales tax" line for the calculated tax
+    if (tax > 0) {
+      await stripe.invoiceItems.create({
+        customer:    customer.id,
+        invoice:     invoice.id,
+        description: "Sales tax",
+        amount:      tax,
+        currency:    "usd",
+      });
+    }
+
+    // Finalize and mark paid out-of-band (cash collected outside Stripe)
+    const finalized = await stripe.invoices.finalizeInvoice(invoice.id);
+    const paid      = await stripe.invoices.pay(finalized.id, { paid_out_of_band: true });
+
+    // Record the tax transaction so it shows in Stripe Tax reports
+    try {
+      await stripe.tax.transactions.createFromCalculation({
+        calculation: calculation.id,
+        reference:   paid.number || paid.id,
+      });
+      console.log("🧾 Tax transaction recorded for cash sale");
+    } catch (taxErr) {
+      console.error("❌ Tax transaction failed (non-fatal):", taxErr.message);
+    }
+
+    console.log(`✅ Cash sale recorded: ${paid.number} — $${(totalCents/100).toFixed(2)}`);
+
+    res.json({
+      ok:               true,
+      invoiceNumber:    paid.number,
+      subtotal:         (totalCents - tax) / 100,
+      tax:              tax / 100,
+      total:            totalCents / 100,
+      hostedInvoiceUrl: paid.hosted_invoice_url,
+    });
+  } catch (err) {
+    console.error("❌ /staff/cash-sale error:", err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────
 // CREATE PAYMENT INTENT
 // ─────────────────────────────────────────────────────
 app.post("/create-payment-intent", async (req, res) => {
   console.log("📥 /create-payment-intent called");
   try {
-    const { cart, shipping, coverFee } = req.body;
+    const { cart, shipping, coverFee, discountCode, inPerson } = req.body;
 
     if (!cart || !Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Invalid or empty cart" });
     }
-    if (!shipping?.address || !shipping?.zip) {
-      return res.status(400).json({ error: "Shipping address required for tax" });
-    }
 
+    // In-person staff sales use the store address for tax and have no shipping.
+    // Online customers still need a shipping address.
+    let taxAddress, shippingCents;
+    if (inPerson) {
+      taxAddress    = STORE_ADDRESS;
+      shippingCents = 0;
+    } else {
+      if (!shipping?.address || !shipping?.zip) {
+        return res.status(400).json({ error: "Shipping address required for tax" });
+      }
+      taxAddress = {
+        line1:       shipping.address,
+        city:        shipping.city,
+        state:       shipping.state || "CA",
+        postal_code: shipping.zip,
+        country:     "US",
+      };
+      const code    = String(discountCode || "").trim().toUpperCase();
+      shippingCents = FREE_SHIPPING_CODES.includes(code) ? 0 : Math.round(SHIPPING_FEE * 100);
+    }
     // Line items — amounts in cents; reference must be unique per line
     const lineItems = cart.map((item) => {
       const line = {
@@ -138,13 +286,7 @@ app.post("/create-payment-intent", async (req, res) => {
       line_items: lineItems,
       shipping_cost: { amount: shippingCents },
       customer_details: {
-        address: {
-          line1: shipping.address,
-          city: shipping.city,
-          state: shipping.state || "CA",
-          postal_code: shipping.zip,
-          country: "US",
-        },
+        address: taxAddress,
         address_source: "shipping",
       },
     });
@@ -171,7 +313,9 @@ app.post("/create-payment-intent", async (req, res) => {
       amount: chargeTotal,
       currency: "usd",
       automatic_payment_methods: { enabled: true },
-      metadata: { tax_calculation: calculation.id, shipping: JSON.stringify(shipping) },
+      metadata: inPerson
+        ? { tax_calculation: calculation.id, inPerson: "true" }
+        : { tax_calculation: calculation.id, shipping: JSON.stringify(shipping) },
     });
 
     console.log("✅ PaymentIntent created:", paymentIntent.id);
@@ -372,6 +516,13 @@ app.post("/create-order-after-payment", async (req, res) => {
       } catch (taxErr) {
         console.error("❌ Tax transaction failed (non-fatal):", taxErr.message);
       }
+    }
+    
+    // In-person staff card sale → no shipping, no Shippo label, no customer email.
+    // Tax transaction was already recorded above.
+    if (paymentIntent.metadata?.inPerson === "true") {
+      console.log("✅ In-person card sale finalized (no shipping label or email)");
+      return res.json({ ok: true, inPerson: true, total: paymentIntent.amount / 100 });
     }
 
     // ── Create Shippo label ──────────────────────────────────────────
