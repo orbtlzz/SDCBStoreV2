@@ -1603,24 +1603,6 @@ export default function App() {
       .finally(() => setProductsLoading(false));
   }, []);
 
-  // Load the list of sale locations when staff mode activates
-  useEffect(() => {
-    if (!staffMode) { setLocations([]); return; }
-    fetch(`${process.env.REACT_APP_SERVER_URL}/staff/locations`, {
-      headers: { "x-staff-password": sessionStorage.getItem("staffAuth") || "" },
-    })
-      .then(res => res.ok ? res.json() : Promise.reject(res))
-      .then(data => {
-        setLocations(data);
-        // Default to the first location if nothing's saved yet
-        if (!sessionStorage.getItem("staffLocationId") && data.length > 0) {
-          setLocationId(data[0].id);
-          sessionStorage.setItem("staffLocationId", data[0].id);
-        }
-      })
-      .catch(err => console.error("❌ Could not load staff locations:", err));
-  }, [staffMode]);
-
   const categories = ["All", ...new Set(products.flatMap(catList))];
 
   // ── Checkout flow state ─────────────────────────────────────────────────
@@ -1638,6 +1620,22 @@ export default function App() {
   const [saleInfo,       setSaleInfo]       = useState(null);
   const [locations,      setLocations]      = useState([]);
   const [locationId,     setLocationId]     = useState(() => sessionStorage.getItem("staffLocationId") || "");
+  // Load the list of sale locations when staff mode activates
+  useEffect(() => {
+    if (!staffMode) { setLocations([]); return; }
+    fetch(`${process.env.REACT_APP_SERVER_URL}/staff/locations`, {
+      headers: { "x-staff-password": sessionStorage.getItem("staffAuth") || "" },
+    })
+      .then(res => res.ok ? res.json() : Promise.reject(res))
+      .then(data => {
+        setLocations(data);
+        if (!sessionStorage.getItem("staffLocationId") && data.length > 0) {
+          setLocationId(data[0].id);
+          sessionStorage.setItem("staffLocationId", data[0].id);
+        }
+      })
+      .catch(err => console.error("❌ Could not load staff locations:", err));
+  }, [staffMode]);
   
   const mainRef   = useRef(null);
   const cartCount = cart.reduce((s, i) => s + i.qty, 0);
