@@ -15,9 +15,6 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // flat shipping fee charged to the customer (USD)
 const SHIPPING_FEE = 9.00;
 
-// discount codes that waive the shipping fee (e.g. in-store pickup) — case-insensitive
-const FREE_SHIPPING_CODES = ["Atlas0514$"];
-
 // Stripe processing fee — only applied when the customer opts in at checkout
 const STRIPE_PCT  = 0.029;
 const STRIPE_FLAT = 0.30;
@@ -115,7 +112,7 @@ app.post("/staff-login", (req, res) => {
 app.post("/create-payment-intent", async (req, res) => {
   console.log("📥 /create-payment-intent called");
   try {
-    const { cart, shipping, coverFee, discountCode } = req.body;
+    const { cart, shipping, coverFee } = req.body;
 
     if (!cart || !Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Invalid or empty cart" });
@@ -123,12 +120,6 @@ app.post("/create-payment-intent", async (req, res) => {
     if (!shipping?.address || !shipping?.zip) {
       return res.status(400).json({ error: "Shipping address required for tax" });
     }
-
-    // Waive shipping if a valid free-shipping code was entered
-    const code          = String(discountCode || "").trim().toUpperCase();
-    const shippingCents = FREE_SHIPPING_CODES.includes(code)
-      ? 0
-      : Math.round(SHIPPING_FEE * 100);
 
     // Line items — amounts in cents; reference must be unique per line
     const lineItems = cart.map((item) => {
