@@ -1810,6 +1810,7 @@ export default function App() {
 
   // ── Cash sale (staff only) — records a Stripe Invoice paid out-of-band ──
   const handleCashSale = useCallback(async () => {
+    const piToCancel = clientSecret ? clientSecret.split("_secret_")[0] : null;
     setCheckoutOpen(false);
     setClientSecret(null);
     setOrderStatus("processing");
@@ -1839,7 +1840,7 @@ export default function App() {
       setOrderError(err.message);
       setAnnouncement(`Cash sale error: ${err.message}`);
     }
-  }, [cart]);
+  }, [cart, clientSecret, locationId]);
 
   // ── Redirect-based payment return (bank redirect, etc.) ────────────────
   useEffect(() => {
