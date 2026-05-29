@@ -3,6 +3,9 @@ import cors from "cors";
 import Stripe from "stripe";
 import fetch from "node-fetch";
 import nodemailer from "nodemailer";
+import dns from "node:dns";
+
+dns.setDefaultResultOrder("ipv4first");   // ← add this
 
 const app = express();
 
