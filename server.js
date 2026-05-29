@@ -2,10 +2,6 @@ import express from "express";
 import cors from "cors";
 import Stripe from "stripe";
 import fetch from "node-fetch";
-import nodemailer from "nodemailer";
-import dns from "node:dns";
-
-dns.setDefaultResultOrder("ipv4first");   // ← add this
 
 const app = express();
 
@@ -83,26 +79,22 @@ app.use(express.json());
 // 4. Set EMAIL_PASS=<that 16-char password> in Render env vars
 // 5. EMAIL_USER=your.address@gmail.com
 // ─────────────────────────────────────────────────────
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 465,
-  secure: true,
-  family: 4,                  // IPv4 only (keep this)
-  pool: true,                 // reuse one connection across emails
-  maxConnections: 1,          // never open more than one at a time
-  rateDelta: 1000,            // 1 second window
-  rateLimit: 5,               // max 5 emails per second window
-  connectionTimeout: 60000,   // 60s to establish the connection
-  greetingTimeout: 30000,     // 30s for SMTP greeting
-  socketTimeout: 60000,       // 60s for the actual send
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
+import { Resend } from "resend";
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Shim so existing transporter.sendMail({ from, to, subject, html }) calls keep working
+const transporter = {
+  async sendMail({ to, subject, html, text }) {
+    const { error } = await resend.emails.send({
+      from: process.env.EMAIL_FROM || "SDCB Store <onboarding@resend.dev>",
+      to:   Array.isArray(to) ? to : [to],
+      subject,
+      html,
+      text,
+    });
+    if (error) throw new Error(error.message || JSON.stringify(error));
   },
-  tls: {
-    rejectUnauthorized: false,
-  },
-});
+};
 
 // Gate for staff-only routes. The frontend sends the password from sessionStorage
 // in the x-staff-password header.
