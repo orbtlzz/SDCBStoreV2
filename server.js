@@ -84,8 +84,14 @@ const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
   port: 465,
   secure: true,
-  connectionTimeout: 30000,
-  family: 4,                          // ← add this
+  family: 4,                  // IPv4 only (keep this)
+  pool: true,                 // reuse one connection across emails
+  maxConnections: 1,          // never open more than one at a time
+  rateDelta: 1000,            // 1 second window
+  rateLimit: 5,               // max 5 emails per second window
+  connectionTimeout: 60000,   // 60s to establish the connection
+  greetingTimeout: 30000,     // 30s for SMTP greeting
+  socketTimeout: 60000,       // 60s for the actual send
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
