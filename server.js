@@ -360,7 +360,7 @@ app.post("/staff/cash-sale", requireStaff, async (req, res) => {
 app.post("/create-payment-intent", async (req, res) => {
   console.log("📥 /create-payment-intent called");
   try {
-    const { cart, shipping, coverFee, inPerson } = req.body;
+    const { cart, shipping, coverFee, donate, inPerson } = req.body;
 
     if (!cart || !Array.isArray(cart) || cart.length === 0) {
       return res.status(400).json({ error: "Invalid or empty cart" });
@@ -428,10 +428,20 @@ app.post("/create-payment-intent", async (req, res) => {
       chargeTotal   = Math.round((preFeeTotal + STRIPE_FLAT * 100) / (1 - STRIPE_PCT));
       processingFee = chargeTotal - preFeeTotal;
     }
+    
+    // Round-up donation: bumps the charge total to the next whole dollar
+    // (or adds $1 if the customer's total is already on a dollar)
+    let donationCents = 0;
+    if (donate) {
+      const remainder = chargeTotal % 100;
+      donationCents   = remainder === 0 ? 100 : (100 - remainder);
+      chargeTotal    += donationCents;
+    }
 
     console.log(
       `🧾 items $${(itemsAmt/100).toFixed(2)} | ship $${(shippingAmt/100).toFixed(2)} | ` +
-      `tax $${(tax/100).toFixed(2)} | fee $${(processingFee/100).toFixed(2)} | charge $${(chargeTotal/100).toFixed(2)}`
+      `tax $${(tax/100).toFixed(2)} | fee $${(processingFee/100).toFixed(2)} | ` +
+      `donation $${(donationCents/100).toFixed(2)} | charge $${(chargeTotal/100).toFixed(2)}`
     );
 
     const paymentIntent = await stripe.paymentIntents.create({
@@ -442,6 +452,7 @@ app.post("/create-payment-intent", async (req, res) => {
         tax_calculation: calculation.id,
         tax_cents: String(calculation.tax_amount_exclusive),
         cart: JSON.stringify(cart.map(i => ({ id: i.id, qty: i.qty }))),
+        ...(donationCents > 0 ? { donation_cents: String(donationCents) } : {}),
         ...(inPerson
           ? { inPerson: "true", location: inPersonLocation.name }
           : { shipping: JSON.stringify(shipping) }),
@@ -455,6 +466,7 @@ app.post("/create-payment-intent", async (req, res) => {
       shipping:      shippingAmt / 100,
       tax:           tax / 100,
       processingFee: processingFee / 100,
+      donation:      donationCents / 100,
       total:         chargeTotal / 100,
     });
   } catch (err) {
