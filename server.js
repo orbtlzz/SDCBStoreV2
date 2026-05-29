@@ -334,8 +334,8 @@ app.post("/staff/cash-sale", requireStaff, async (req, res) => {
       site:          location.name,
       paymentMethod: 'cash',
       cart:          cart.map(it => ({ id: it.id, name: it.name, qty: it.qty, price: it.price })),
-      subtotal:      subtotalCents / 100,
-      tax:           taxCents / 100,
+      subtotal:      (totalCents - tax) / 100,
+      tax:           tax / 100,
       total:         totalCents / 100,
       timestamp:     new Date().toISOString(),
     });
@@ -599,24 +599,68 @@ app.post("/create-order-after-payment", async (req, res) => {
     const { paymentIntentId } = req.body;
 
     if (!paymentIntentId) {
-      console.error("❌ Missing paymentIntentId");
       return res.status(400).json({ error: "Missing paymentIntentId" });
     }
 
-    // ── Verify payment with Stripe ───────────────────────────────────
     console.log("💳 Retrieving PaymentIntent:", paymentIntentId);
     const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
     console.log("✅ Stripe status:", paymentIntent.status);
 
     if (paymentIntent.status !== "succeeded") {
-      return res
-        .status(400)
-        .json({ error: `Payment not completed. Status: ${paymentIntent.status}` });
+      return res.status(400).json({
+        error: `Payment not completed. Status: ${paymentIntent.status}`,
+      });
     }
 
-    // Resolve the shipping address: prefer the request body, but fall back
-    // to the PaymentIntent metadata (covers redirect-based payments where
-    // the page reloaded and lost the in-memory address).
+    const isInPerson    = paymentIntent.metadata?.inPerson === "true";
+    const taxCents      = Number(paymentIntent.metadata?.tax_cents || 0);
+    const totalCents    = paymentIntent.amount;
+    const subtotalCents = totalCents - taxCents;
+
+    // Record tax transaction (both flows)
+    const taxCalcId = paymentIntent.metadata?.tax_calculation;
+    if (taxCalcId) {
+      try {
+        await stripe.tax.transactions.createFromCalculation({
+          calculation: taxCalcId,
+          reference: paymentIntentId,
+        });
+        console.log("🧾 Tax transaction recorded");
+      } catch (taxErr) {
+        console.error("❌ Tax transaction failed (non-fatal):", taxErr.message);
+      }
+    }
+
+    // Resolve cart (body first, PI metadata as fallback)
+    let cart = req.body.cart;
+    if (!cart && paymentIntent.metadata?.cart) {
+      try { cart = JSON.parse(paymentIntent.metadata.cart); } catch {}
+    }
+    if (Array.isArray(cart) && cart.length > 0) {
+      await decrementStock(cart);
+    }
+
+    const safeCart = Array.isArray(cart)
+      ? cart.map(it => ({ id: it.id, name: it.name, qty: it.qty, price: it.price }))
+      : [];
+
+    // ── In-person staff card sale: skip shipping/Shippo/email ──
+    if (isInPerson) {
+      console.log("✅ In-person card sale finalized");
+      await logSale({
+        orderId:       paymentIntent.id,
+        site:          paymentIntent.metadata.location || "In-person",
+        paymentMethod: "card",
+        cart:          safeCart,
+        subtotal:      subtotalCents / 100,
+        tax:           taxCents / 100,
+        total:         totalCents / 100,
+        timestamp:     new Date().toISOString(),
+      });
+      return res.json({ ok: true, inPerson: true, total: totalCents / 100 });
+    }
+
+    // ── Online flow: needs shipping address ──
     let shipping = req.body.shipping;
     if (!shipping && paymentIntent.metadata?.shipping) {
       try {
@@ -634,36 +678,7 @@ app.post("/create-order-after-payment", async (req, res) => {
       }
     }
 
-    // Record the tax transaction for reporting
-    const taxCalcId = paymentIntent.metadata?.tax_calculation;
-    if (taxCalcId) {
-      try {
-        await stripe.tax.transactions.createFromCalculation({
-          calculation: taxCalcId,
-          reference: paymentIntentId,
-        });
-        console.log("🧾 Tax transaction recorded");
-      } catch (taxErr) {
-        console.error("❌ Tax transaction failed (non-fatal):", taxErr.message);
-      }
-    }
-    
-    // Resolve the cart (body first, PaymentIntent metadata as fallback for redirect flows)
-    let cart = req.body.cart;
-    if (!cart && paymentIntent.metadata?.cart) {
-      try { cart = JSON.parse(paymentIntent.metadata.cart); } catch {}
-    }
-    if (Array.isArray(cart) && cart.length > 0) {
-      await decrementStock(cart);
-    }
-
-    // In-person staff card sale → no shipping, no Shippo label, no customer email.
-    if (paymentIntent.metadata?.inPerson === "true") {
-      console.log("✅ In-person card sale finalized (no shipping label or email)");
-      return res.json({ ok: true, inPerson: true, total: paymentIntent.amount / 100 });
-    }
-
-    // ── Create Shippo label ──────────────────────────────────────────
+    // Create Shippo label
     let shippoResult;
     try {
       shippoResult = await createShippoLabel(shipping);
@@ -678,7 +693,7 @@ app.post("/create-order-after-payment", async (req, res) => {
       };
     }
 
-    // ── Send confirmation email (RESTORED) ───────────────────────────
+    // Send confirmation email
     console.log("📧 Sending confirmation email to:", shipping.email);
     try {
       await transporter.sendMail({
@@ -689,14 +704,12 @@ app.post("/create-order-after-payment", async (req, res) => {
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #0D3D6E;">Thank you for your order!</h2>
             <p>We appreciate your support of the San Diego Center for the Blind.</p>
-
             <h3>Shipping To</h3>
             <p>
               ${shipping.name}<br/>
               ${shipping.address}<br/>
               ${shipping.city}, ${shipping.state || "CA"} ${shipping.zip}
             </p>
-
             <h3>Tracking</h3>
             <p><strong>Carrier:</strong> ${shippoResult.carrier || "TBD"}</p>
             <p><strong>Tracking Number:</strong> ${shippoResult.trackingNumber}</p>
@@ -705,7 +718,6 @@ app.post("/create-order-after-payment", async (req, res) => {
                 ? `<p><a href="${shippoResult.trackingUrl}" style="color: #1B75BB;">Track your package</a></p>`
                 : ""
             }
-
             <hr/>
             <p style="font-size: 0.85rem; color: #666;">
               San Diego Center for the Blind · 5922 El Cajon Blvd, San Diego, CA 92115 · (619) 583-1542
@@ -718,16 +730,11 @@ app.post("/create-order-after-payment", async (req, res) => {
       console.error("❌ Email send failed (non-fatal):", mailErr.message);
     }
 
-    const isInPerson    = paymentIntent.metadata.inPerson === 'true';
-    const taxCents      = Number(paymentIntent.metadata.tax_cents || 0);
-    const totalCents    = paymentIntent.amount;
-    const subtotalCents = totalCents - taxCents;
-    
     await logSale({
       orderId:       paymentIntent.id,
-      site:          isInPerson ? (paymentIntent.metadata.location || 'In-person') : 'Online',
-      paymentMethod: 'card',
-      cart:          cart.map(it => ({ id: it.id, name: it.name, qty: it.qty, price: it.price })),
+      site:          "Online",
+      paymentMethod: "card",
+      cart:          safeCart,
       subtotal:      subtotalCents / 100,
       tax:           taxCents / 100,
       total:         totalCents / 100,
