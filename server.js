@@ -15,7 +15,7 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // flat shipping fee charged to the customer (USD)
 const SHIPPING_FEE = 9.00;
 
-const LOW_STOCK_THRESHOLD = 2;
+const LOW_STOCK_THRESHOLD = 3;
 
 // ─────────────────────────────────────────────────────
 // SALE LOCATIONS — used as the tax address for in-person staff sales.
