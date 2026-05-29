@@ -700,6 +700,12 @@ function CheckoutForm({ total, taxInfo, onPaymentComplete, onCancel, staffMode, 
                 <span>${taxInfo.processingFee.toFixed(2)}</span>
               </div>
             )}
+            {taxInfo.donation > 0 && (
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: "0.9rem", color: highContrast ? SDCB.hcText : SDCB.gray }}>
+                <span>Donation 💙</span>
+                <span>${taxInfo.donation.toFixed(2)}</span>
+              </div>
+            )}
           </>
         )}
         <div
@@ -920,6 +926,7 @@ function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
   const [status,   setStatus]   = useState("idle"); // idle | submitting | error
   const [errorMsg, setErrorMsg] = useState("");
   const [coverFee, setCoverFee] = useState(false);
+  const [donate, setDonate] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -927,6 +934,7 @@ function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
       setStatus("idle");
       setErrorMsg("");
       setCoverFee(false);
+      setDonate(false);
       setTimeout(() => firstRef.current?.focus(), 50);
     }
   }, [open]);
@@ -990,7 +998,7 @@ function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cart, shipping, coverFee }),
+          body: JSON.stringify({ cart, shipping, coverFee, donate }),
         }
       );
       const data = await res.json();
@@ -1123,6 +1131,27 @@ function ShippingModal({ open, cart, onReady, onAnnounce, highContrast }) {
             <span>
               Add the card processing fee (about 3%) so more of your purchase
               supports the San Diego Center for the Blind.
+            </span>
+          </label>
+
+          <label
+            style={{
+              display: "flex", alignItems: "flex-start", gap: 10,
+              fontSize: "0.85rem", color: highContrast ? SDCB.hcText : SDCB.gray,
+              cursor: "pointer", padding: "0.6rem 0.75rem", borderRadius: 8,
+              border: highContrast ? `1.5px solid ${SDCB.hcYellow}` : `1.5px solid ${SDCB.lightGray}`,
+              background: highContrast ? "#111" : SDCB.skyLight,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={donate}
+              onChange={(e) => setDonate(e.target.checked)}
+              disabled={isSubmitting}
+              style={{ width: 18, height: 18, marginTop: 1, flexShrink: 0, cursor: "pointer", accentColor: highContrast ? SDCB.hcYellow : SDCB.blue }}
+            />
+            <span>
+              Round up to the nearest dollar as a donation to the San Diego Center for the Blind.
             </span>
           </label>
 
@@ -1725,6 +1754,7 @@ export default function App() {
       shipping:      paymentData.shipping,
       tax:           paymentData.tax,
       processingFee: paymentData.processingFee,
+      donation:      paymentData.donation,
       total:         paymentData.total,
     });
     setShippingOpen(false);
