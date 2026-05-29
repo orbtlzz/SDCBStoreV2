@@ -162,6 +162,24 @@ async function checkStock(cart) {
   }
 }
 
+async function logSale(sale) {
+  try {
+    const res = await fetch(SHEET_URL, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'logSale',
+        secret: process.env.STOCK_SECRET,
+        sale,
+      }),
+    });
+    console.log('📊 Sale logged:', await res.text());
+  } catch (err) {
+    // Logging must never block a customer's checkout
+    console.error('⚠️ Could not log sale (non-fatal):', err.message);
+  }
+}
+
 // Decrement quantities in the sheet after a successful sale.
 async function decrementStock(cart) {
   if (!process.env.STOCK_SECRET) {
@@ -311,6 +329,17 @@ app.post("/staff/cash-sale", requireStaff, async (req, res) => {
     await decrementStock(cart);
     console.log(`✅ Cash sale recorded: ${paid.number} — $${(totalCents/100).toFixed(2)}`);
 
+    await logSale({
+      orderId:       paid.number || paid.id,
+      site:          location.name,
+      paymentMethod: 'cash',
+      cart:          cart.map(it => ({ id: it.id, name: it.name, qty: it.qty, price: it.price })),
+      subtotal:      subtotalCents / 100,
+      tax:           taxCents / 100,
+      total:         totalCents / 100,
+      timestamp:     new Date().toISOString(),
+    });
+
     res.json({
       ok:               true,
       invoiceNumber:    paid.number,
@@ -411,6 +440,7 @@ app.post("/create-payment-intent", async (req, res) => {
       automatic_payment_methods: { enabled: true },
       metadata: {
         tax_calculation: calculation.id,
+        tax_cents: String(calculation.tax_amount_exclusive),
         cart: JSON.stringify(cart.map(i => ({ id: i.id, qty: i.qty }))),
         ...(inPerson
           ? { inPerson: "true", location: inPersonLocation.name }
@@ -687,6 +717,22 @@ app.post("/create-order-after-payment", async (req, res) => {
     } catch (mailErr) {
       console.error("❌ Email send failed (non-fatal):", mailErr.message);
     }
+
+    const isInPerson    = paymentIntent.metadata.inPerson === 'true';
+    const taxCents      = Number(paymentIntent.metadata.tax_cents || 0);
+    const totalCents    = paymentIntent.amount;
+    const subtotalCents = totalCents - taxCents;
+    
+    await logSale({
+      orderId:       paymentIntent.id,
+      site:          isInPerson ? (paymentIntent.metadata.location || 'In-person') : 'Online',
+      paymentMethod: 'card',
+      cart:          cart.map(it => ({ id: it.id, name: it.name, qty: it.qty, price: it.price })),
+      subtotal:      subtotalCents / 100,
+      tax:           taxCents / 100,
+      total:         totalCents / 100,
+      timestamp:     new Date().toISOString(),
+    });
 
     return res.json({
       success:        true,
