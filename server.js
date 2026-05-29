@@ -15,6 +15,8 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 // flat shipping fee charged to the customer (USD)
 const SHIPPING_FEE = 9.00;
 
+const LOW_STOCK_THRESHOLD = 2;
+
 // ─────────────────────────────────────────────────────
 // SALE LOCATIONS — used as the tax address for in-person staff sales.
 // The first entry is the default. Edit this list to add/remove venues.
@@ -198,9 +200,45 @@ async function decrementStock(cart) {
     console.log("📦 Stock decremented:", data.updates);
     // Invalidate the product cache so the next read pulls fresh quantities
     productCache = { data: null, fetchedAt: 0 };
+    // Email staff if anything dropped to or below the threshold.
+    const lowItems = (data.updates || []).filter(u => Number(u.now) <= LOW_STOCK_THRESHOLD);
+    if (lowItems.length > 0) {
+      sendLowStockAlert(lowItems, cart).catch(err =>
+        console.error("⚠️ Low-stock email failed (non-fatal):", err.message)
+      );
+}
   } catch (err) {
     console.error("⚠️ Could not decrement stock (non-fatal):", err.message);
   }
+}
+
+async function sendLowStockAlert(lowItems, cart) {
+  const to = process.env.STAFF_NOTIFY_EMAIL || process.env.EMAIL_USER;
+  if (!to) return;
+
+  const nameById = new Map((cart || []).map(it => [String(it.id), it.name]));
+  const rows = lowItems.map(it => {
+    const name  = nameById.get(String(it.id)) || `Product #${it.id}`;
+    const out   = Number(it.now) === 0;
+    return { name, qty: it.now, out };
+  });
+
+  await transporter.sendMail({
+    from:    `"SDCB Store" <${process.env.EMAIL_USER}>`,
+    to,
+    subject: `🚨 Low stock alert — ${rows.length} product${rows.length > 1 ? 's' : ''}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #C53030;">🚨 Low Stock Alert</h2>
+        <p>The following products are at or below ${LOW_STOCK_THRESHOLD} units:</p>
+        <ul>
+          ${rows.map(r => `<li><strong>${r.name}</strong> — ${r.qty} left${r.out ? " <span style='color:#C53030'>(OUT OF STOCK)</span>" : ""}</li>`).join("")}
+        </ul>
+        <p style="color: #666; font-size: 0.85rem;">Update the Products sheet quantities or restock as needed.</p>
+      </div>
+    `,
+  });
+  console.log(`📧 Low-stock alert sent: ${rows.map(r => r.name).join(", ")}`);
 }
 
 // ─────────────────────────────────────────────────────
